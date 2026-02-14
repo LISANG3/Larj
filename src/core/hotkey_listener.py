@@ -32,6 +32,7 @@ class HotkeyListener(QObject):
         self.enabled = True
         self.last_trigger_time = 0
         self.debounce_ms = 200  # Prevent double-triggers
+        self.pressed_keys = set()
         
         # Load configuration
         self.reload_config()
@@ -61,7 +62,8 @@ class HotkeyListener(QObject):
             
             # Start keyboard listener for fallback keys
             self.keyboard_listener = pynput_keyboard.Listener(
-                on_press=self._on_key_press
+                on_press=self._on_key_press,
+                on_release=self._on_key_release
             )
             self.keyboard_listener.start()
             
@@ -80,6 +82,7 @@ class HotkeyListener(QObject):
             if self.keyboard_listener:
                 self.keyboard_listener.stop()
                 self.keyboard_listener = None
+            self.pressed_keys.clear()
             
             self.logger.info("Hotkey listeners stopped")
             
@@ -97,10 +100,16 @@ class HotkeyListener(QObject):
             
             # XButton1 is mouse button 8 (side button)
             # XButton2 is mouse button 9 (side button)
-            if button_name in ['x1', 'x2'] or 'XButton' in self.trigger_key:
-                if self._check_debounce():
-                    self.logger.debug(f"Mouse button {button_name} triggered")
-                    self.hotkey_triggered.emit()
+            if button_name in ['x1', 'x2'] and self.trigger_key in ['XButton1', 'XButton2']:
+                expected_button = 'x1' if self.trigger_key == 'XButton1' else 'x2'
+                if button_name != expected_button:
+                    return
+            elif self.trigger_key not in ['XButton1', 'XButton2']:
+                return
+
+            if self._check_debounce():
+                self.logger.debug(f"Mouse button {button_name} triggered")
+                self.hotkey_triggered.emit()
                     
         except Exception as e:
             self.logger.error(f"Error handling mouse click: {e}")
@@ -111,18 +120,55 @@ class HotkeyListener(QObject):
             return
         
         try:
-            # Check fallback keyboard shortcuts
-            # For now, we'll implement a simple Ctrl+Space check
-            # TODO: Implement more sophisticated hotkey combination detection
-            
-            # This is a simplified implementation
-            # A full implementation would track modifier keys (Ctrl, Alt, Shift)
-            # and detect key combinations
-            
-            pass  # Placeholder for keyboard shortcut detection
+            key_name = self._normalize_key(key)
+            if not key_name:
+                return
+
+            self.pressed_keys.add(key_name)
+
+            for shortcut in self.fallback_keys:
+                required_keys = {part.strip().lower() for part in shortcut.split('+') if part.strip()}
+                if required_keys and required_keys.issubset(self.pressed_keys):
+                    if self._check_debounce():
+                        self.logger.debug(f"Keyboard shortcut {shortcut} triggered")
+                        self.hotkey_triggered.emit()
+                    break
             
         except Exception as e:
             self.logger.error(f"Error handling key press: {e}")
+
+    def _on_key_release(self, key):
+        """Handle keyboard key release"""
+        try:
+            key_name = self._normalize_key(key)
+            if key_name:
+                self.pressed_keys.discard(key_name)
+        except Exception as e:
+            self.logger.error(f"Error handling key release: {e}")
+
+    def _normalize_key(self, key):
+        """Normalize pynput key objects to simple key names"""
+        if isinstance(key, pynput_keyboard.KeyCode):
+            if key.char:
+                return key.char.lower()
+            return None
+
+        key_map = {
+            pynput_keyboard.Key.ctrl: "ctrl",
+            pynput_keyboard.Key.ctrl_l: "ctrl",
+            pynput_keyboard.Key.ctrl_r: "ctrl",
+            pynput_keyboard.Key.alt: "alt",
+            pynput_keyboard.Key.alt_l: "alt",
+            pynput_keyboard.Key.alt_r: "alt",
+            pynput_keyboard.Key.shift: "shift",
+            pynput_keyboard.Key.shift_l: "shift",
+            pynput_keyboard.Key.shift_r: "shift",
+            pynput_keyboard.Key.cmd: "meta",
+            pynput_keyboard.Key.cmd_l: "meta",
+            pynput_keyboard.Key.cmd_r: "meta",
+            pynput_keyboard.Key.space: "space",
+        }
+        return key_map.get(key)
     
     def _check_debounce(self) -> bool:
         """Check if enough time has passed since last trigger (debounce)"""
