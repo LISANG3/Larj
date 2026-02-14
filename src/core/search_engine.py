@@ -8,6 +8,7 @@ Integrates with Everything's es.exe for fast file searching
 import json
 import logging
 import subprocess
+import time
 from pathlib import Path
 from typing import List, Dict
 from PyQt5.QtCore import QObject, pyqtSignal, QTimer, QThread
@@ -159,8 +160,6 @@ class SearchEngine(QObject):
     
     def _check_cache(self, keyword: str) -> bool:
         """Check if keyword exists in cache and is still valid"""
-        import time
-        
         if keyword in self.search_cache:
             timestamp, results = self.search_cache[keyword]
             if time.time() - timestamp < self.cache_timeout:
@@ -200,8 +199,6 @@ class SearchEngine(QObject):
     
     def _on_search_completed(self, keyword: str, results: List[Dict]):
         """Handle search completion"""
-        import time
-        
         # Update cache
         self.search_cache[keyword] = (time.time(), results)
         
