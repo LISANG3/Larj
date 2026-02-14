@@ -115,6 +115,27 @@ class HotkeyListenerTests(unittest.TestCase):
 
         self.assertEqual(len(triggered), 1)
 
+    def test_keyboard_trigger_key_combo_triggers(self):
+        listener = self.module.HotkeyListener(FakeConfigManager(trigger_key="Ctrl+A", fallback_keys=[]))
+        triggered = []
+        listener.hotkey_triggered.connect(lambda: triggered.append(True))
+
+        listener.last_trigger_time = 0
+        listener._on_key_press(Key.ctrl_l)
+        listener._on_key_press(KeyCode("a"))
+
+        self.assertEqual(len(triggered), 1)
+
+    def test_mouse_trigger_supports_named_buttons(self):
+        listener = self.module.HotkeyListener(FakeConfigManager(trigger_key="mouse_left"))
+        triggered = []
+        listener.hotkey_triggered.connect(lambda: triggered.append(True))
+
+        listener.last_trigger_time = 0
+        listener._on_mouse_click(0, 0, types.SimpleNamespace(name="left"), True)
+
+        self.assertEqual(len(triggered), 1)
+
 
 if __name__ == "__main__":
     unittest.main()
