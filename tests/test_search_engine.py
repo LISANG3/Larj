@@ -1,8 +1,10 @@
 import importlib
+import json
 import sys
 import types
 import unittest
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 
 class DummySignal:
@@ -82,6 +84,26 @@ class SearchEngineTests(unittest.TestCase):
         engine = self.module.SearchEngine(FakeConfigManager({"search.es_path": "~/bin/es.exe"}))
         expected = Path("~/bin/es.exe").expanduser()
         self.assertEqual(engine.es_path, expected)
+
+    def test_search_worker_retries_once_after_auto_start_everything(self):
+        worker = self.module.SearchWorker("everything/es.exe", "abc", 10)
+        worker.search_completed._handlers = []
+        completed = []
+        worker.search_completed.connect(lambda results: completed.extend(results))
+
+        failed = Mock(returncode=1, stdout="", stderr="IPC window not found")
+        success_payload = {"results": [{"name": "a.txt", "path": "C:/tmp", "size": 1, "date_modified": ""}]}
+        success = Mock(returncode=0, stdout=json.dumps(success_payload), stderr="")
+
+        with patch.object(self.module.os, "name", "nt"), \
+             patch.object(self.module.time, "sleep"), \
+             patch.object(worker, "_start_everything", return_value=True), \
+             patch.object(worker, "_run_search_command", side_effect=[failed, success]) as run_cmd:
+            worker.run()
+
+        self.assertEqual(run_cmd.call_count, 2)
+        self.assertEqual(len(completed), 1)
+        self.assertEqual(completed[0]["name"], "a.txt")
 
 
 if __name__ == "__main__":
