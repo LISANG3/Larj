@@ -8,13 +8,14 @@ Contains search box, app grid, and search results
 import logging
 import os
 from pathlib import Path
+import psutil
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton,
     QScrollArea, QLabel, QGridLayout, QListWidget, QListWidgetItem,
     QStackedWidget, QFrame, QDialog, QDialogButtonBox, QFormLayout,
     QCheckBox, QSpinBox, QFileDialog, QMessageBox
 )
-from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtCore import Qt, pyqtSignal, QTimer
 from PyQt5.QtGui import QIcon, QPixmap
 from src.core.hotkey_listener import detect_hotkey, DEFAULT_TRIGGER_KEY
 
@@ -145,6 +146,17 @@ class MainPanel(QWidget):
         self.stacked_widget.addWidget(self.search_results_widget)
         
         layout.addWidget(self.stacked_widget)
+        footer_layout = QHBoxLayout()
+        footer_layout.addStretch()
+        self.memory_label = QLabel("内存: -- MB")
+        self.memory_label.setStyleSheet("color: #888; font-size: 11px; padding-right: 2px;")
+        footer_layout.addWidget(self.memory_label)
+        layout.addLayout(footer_layout)
+
+        self._memory_timer = QTimer(self)
+        self._memory_timer.timeout.connect(self._update_memory_usage)
+        self._memory_timer.start(2000)
+        self._update_memory_usage()
         
         # Set window style
         self.setStyleSheet("""
@@ -364,3 +376,11 @@ class MainPanel(QWidget):
             self.hide()
             self.clear_search()
         super().focusOutEvent(event)
+
+    def _update_memory_usage(self):
+        """Update memory usage indicator"""
+        try:
+            memory_mb = psutil.Process(os.getpid()).memory_info().rss / (1024 * 1024)
+            self.memory_label.setText(f"内存: {memory_mb:.1f} MB")
+        except Exception:
+            self.memory_label.setText("内存: -- MB")

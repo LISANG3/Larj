@@ -1,6 +1,7 @@
 # Everything Command-Line Interface Directory
 
 This directory should contain `es.exe` from Everything.
+If you want Larj to auto-start Everything when needed, also place `Everything.exe` here.
 
 ## Download
 

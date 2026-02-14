@@ -16,7 +16,7 @@ Larj is a lightweight Windows desktop efficiency tool designed for quick file se
 
 - Windows 10/11
 - Python 3.8 or higher
-- Everything (es.exe) - place in `everything/` directory
+- Everything (recommended: install Everything and copy `es.exe`/`Everything.exe` into `everything/`)
 
 ### Setup
 
@@ -31,7 +31,7 @@ cd Larj
 pip install -r requirements.txt
 ```
 
-3. Download Everything command-line tool (es.exe) from [Everything](https://www.voidtools.com/downloads/) and place it in the `everything/` directory.
+3. Download Everything from [Everything](https://www.voidtools.com/downloads/), and place `es.exe` and `Everything.exe` in the `everything/` directory.
 
 4. Run the application:
 ```bash
@@ -66,6 +66,7 @@ Plugins extend Larj's functionality. Sample plugins included:
 - **Notepad**: Quick access to Windows Notepad
 
 To enable a plugin, add its name to `config/settings.json` under `plugin.enabled_plugins`.
+For plugin authoring details, see [PLUGIN_DEVELOPMENT.md](PLUGIN_DEVELOPMENT.md).
 
 ## Configuration
 

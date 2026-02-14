@@ -7,6 +7,7 @@ Integrates with Everything's es.exe for fast file searching
 
 import json
 import logging
+import os
 import subprocess
 import time
 from pathlib import Path
@@ -30,22 +31,12 @@ class SearchWorker(QThread):
     def run(self):
         """Execute search in separate thread"""
         try:
-            # Build command for Everything
-            cmd = [
-                self.es_path,
-                "-n", str(self.max_results),  # Limit results
-                "-json",  # Output as JSON
-                self.keyword
-            ]
-            
             # Execute search
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=5,
-                encoding='utf-8'
-            )
+            result = self._run_search_command()
+            if result.returncode != 0 and self._should_retry_with_everything(result):
+                if self._start_everything():
+                    time.sleep(0.8)
+                    result = self._run_search_command()
             
             if result.returncode == 0:
                 # Parse JSON output
@@ -77,6 +68,47 @@ class SearchWorker(QThread):
         except Exception as e:
             self.logger.error(f"Search error: {e}", exc_info=True)
             self.search_failed.emit(str(e))
+
+    def _run_search_command(self):
+        """Run es.exe search command"""
+        cmd = [
+            self.es_path,
+            "-n", str(self.max_results),  # Limit results
+            "-json",  # Output as JSON
+            self.keyword
+        ]
+        return subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            encoding='utf-8'
+        )
+
+    def _should_retry_with_everything(self, result) -> bool:
+        """Retry once after starting Everything when connection is unavailable"""
+        if os.name != "nt":
+            return False
+        output = f"{result.stdout}\n{result.stderr}".lower()
+        markers = ["ipc", "not running", "failed to connect", "createfilemapping"]
+        return any(marker in output for marker in markers)
+
+    def _start_everything(self) -> bool:
+        """Try to start Everything main process"""
+        everything_exe = Path(self.es_path).with_name("Everything.exe")
+        if not everything_exe.exists():
+            return False
+        try:
+            subprocess.Popen(
+                [str(everything_exe), "-startup"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            )
+            return True
+        except Exception as e:
+            self.logger.warning(f"Failed to auto-start Everything: {e}")
+            return False
     
     def _get_file_type(self, filename: str) -> str:
         """Get file type from filename"""
