@@ -10,6 +10,8 @@ import threading
 from PyQt5.QtCore import QObject, pyqtSignal, QTimer
 from pynput import mouse, keyboard as pynput_keyboard
 
+DEFAULT_TRIGGER_KEY = "xbutton1"
+
 
 def detect_hotkey():
     """
@@ -40,7 +42,9 @@ def detect_hotkey():
         except AttributeError:
             key_name = str(key).replace("Key.", "").lower()
 
-        result = "+".join(sorted(modifiers) + [key_name]) if modifiers else key_name
+        modifier_order = ["ctrl", "alt", "shift", "meta"]
+        ordered_modifiers = [name for name in modifier_order if name in modifiers]
+        result = "+".join(ordered_modifiers + [key_name]) if ordered_modifiers else key_name
         event.set()
         return False
 
@@ -55,7 +59,8 @@ def detect_hotkey():
                 "x1": "xbutton1",
                 "x2": "xbutton2",
             }
-            result = button_map.get(str(button_name).lower(), str(button_name).lower())
+            normalized = str(button_name).lower()
+            result = button_map.get(normalized, normalized)
             event.set()
             return False
 
@@ -63,9 +68,11 @@ def detect_hotkey():
     m_listener = mouse.Listener(on_click=on_click)
     k_listener.start()
     m_listener.start()
-    event.wait()
-    k_listener.stop()
-    m_listener.stop()
+    try:
+        event.wait()
+    finally:
+        k_listener.stop()
+        m_listener.stop()
     return result
 
 
@@ -101,8 +108,12 @@ class HotkeyListener(QObject):
     def reload_config(self):
         """Reload configuration"""
         try:
-            self.trigger_key = self._normalize_hotkey(self.config_manager.get("hotkey.trigger_key", "XButton1"))
-            self.fallback_keys = [self._normalize_hotkey(k) for k in self.config_manager.get("hotkey.fallback_keys", ["Ctrl+Space"])]
+            self.trigger_key = self._normalize_hotkey(self.config_manager.get("hotkey.trigger_key", DEFAULT_TRIGGER_KEY))
+            self.fallback_keys = [
+                normalized for normalized in
+                (self._normalize_hotkey(k) for k in self.config_manager.get("hotkey.fallback_keys", ["Ctrl+Space"]))
+                if normalized != self.trigger_key
+            ]
             self.enabled = self.config_manager.get("hotkey.enabled", True)
             
             self.logger.info(f"Hotkey config reloaded: {self.trigger_key}, fallback: {self.fallback_keys}")

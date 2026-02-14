@@ -124,6 +124,8 @@ class HotkeyListenerTests(unittest.TestCase):
         listener._on_key_press(Key.ctrl_l)
         listener._on_key_press(KeyCode("a"))
 
+        self.assertIn("ctrl", listener.pressed_keys)
+        self.assertIn("a", listener.pressed_keys)
         self.assertEqual(len(triggered), 1)
 
     def test_mouse_trigger_supports_named_buttons(self):
