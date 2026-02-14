@@ -52,6 +52,33 @@ class FakeConfigManager:
 class HotkeyListenerTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        fake_pyqt5 = types.ModuleType("PyQt5")
+        fake_qtcore = types.ModuleType("PyQt5.QtCore")
+
+        class DummySignal:
+            def __init__(self):
+                self._handlers = []
+
+            def connect(self, handler):
+                self._handlers.append(handler)
+
+            def emit(self, *args, **kwargs):
+                for handler in self._handlers:
+                    handler(*args, **kwargs)
+
+        class DummyQObject:
+            def __init__(self, *args, **kwargs):
+                super().__init__()
+
+        def pyqtSignal(*args, **kwargs):
+            return DummySignal()
+
+        fake_qtcore.QObject = DummyQObject
+        fake_qtcore.pyqtSignal = pyqtSignal
+        fake_qtcore.QTimer = object
+        sys.modules["PyQt5"] = fake_pyqt5
+        sys.modules["PyQt5.QtCore"] = fake_qtcore
+
         fake_pynput = types.ModuleType("pynput")
         fake_pynput.mouse = types.SimpleNamespace(Listener=DummyListener)
         fake_pynput.keyboard = types.SimpleNamespace(Listener=DummyListener, Key=Key, KeyCode=KeyCode)
@@ -64,6 +91,10 @@ class HotkeyListenerTests(unittest.TestCase):
         listener = self.module.HotkeyListener(FakeConfigManager(trigger_key="XButton1"))
         triggered = []
         listener.hotkey_triggered.connect(lambda: triggered.append(True))
+
+        listener.last_trigger_time = 0
+        listener._on_mouse_click(0, 0, types.SimpleNamespace(name="left"), True)
+        self.assertEqual(len(triggered), 0)
 
         listener.last_trigger_time = 0
         listener._on_mouse_click(0, 0, types.SimpleNamespace(name="x2"), True)
