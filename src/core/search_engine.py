@@ -5,7 +5,8 @@ Search Engine - File search using Everything
 Integrates with Everything's es.exe for fast file searching
 """
 
-import json
+import csv
+import io
 import logging
 import os
 import subprocess
@@ -33,34 +34,18 @@ class SearchWorker(QThread):
     def run(self):
         """Execute search in separate thread"""
         try:
-            # Execute search
             result = self._run_search_command()
             if result.returncode != 0 and self._should_retry_with_everything(result):
                 if self._start_everything():
-                    # Give Everything a short moment to initialize IPC before retrying.
                     time.sleep(self.EVERYTHING_STARTUP_DELAY)
                     result = self._run_search_command()
             
             if result.returncode == 0:
-                # Parse JSON output
                 try:
-                    data = json.loads(result.stdout)
-                    results = data.get("results", [])
+                    results = self._parse_csv_output(result.stdout)
+                    self.search_completed.emit(results)
                     
-                    # Transform results to internal format
-                    transformed_results = []
-                    for item in results:
-                        transformed_results.append({
-                            "name": item.get("name", ""),
-                            "path": item.get("path", ""),
-                            "size": item.get("size", 0),
-                            "date_modified": item.get("date_modified", ""),
-                            "type": self._get_file_type(item.get("name", ""))
-                        })
-                    
-                    self.search_completed.emit(transformed_results)
-                    
-                except json.JSONDecodeError as e:
+                except Exception as e:
                     self.logger.error(f"Failed to parse search results: {e}")
                     self.search_failed.emit(f"Failed to parse results: {e}")
             else:
@@ -76,17 +61,64 @@ class SearchWorker(QThread):
         """Run es.exe search command"""
         cmd = [
             self.es_path,
-            "-n", str(self.max_results),  # Limit results
-            "-json",  # Output as JSON
+            "-n", str(self.max_results),
+            "-csv",
+            "-name",
+            "-path-column",
+            "-size",
+            "-date-modified",
             self.keyword
         ]
-        return subprocess.run(
+        result = subprocess.run(
             cmd,
             capture_output=True,
-            text=True,
-            timeout=5,
-            encoding='utf-8'
+            timeout=5
         )
+        stdout = self._decode_output(result.stdout)
+        stderr = self._decode_output(result.stderr)
+        return subprocess.CompletedProcess(
+            args=result.args,
+            returncode=result.returncode,
+            stdout=stdout,
+            stderr=stderr
+        )
+    
+    def _decode_output(self, data: bytes) -> str:
+        """Decode output with fallback encodings"""
+        if not data:
+            return ""
+        for encoding in ['utf-8', 'gbk', 'cp936', 'latin-1']:
+            try:
+                return data.decode(encoding)
+            except UnicodeDecodeError:
+                continue
+        return data.decode('utf-8', errors='replace')
+    
+    def _parse_csv_output(self, csv_output: str) -> List[Dict]:
+        """Parse CSV output from es.exe"""
+        results = []
+        reader = csv.DictReader(io.StringIO(csv_output))
+        
+        for row in reader:
+            name = row.get("Name", "")
+            path = row.get("Path", "")
+            size_str = row.get("Size", "0")
+            date_modified = row.get("Date Modified", "")
+            
+            try:
+                size = int(size_str) if size_str else 0
+            except ValueError:
+                size = 0
+            
+            results.append({
+                "name": name,
+                "path": path,
+                "size": size,
+                "date_modified": date_modified,
+                "type": self._get_file_type(name)
+            })
+        
+        return results
 
     def _should_retry_with_everything(self, result) -> bool:
         """Retry once after starting Everything when connection is unavailable"""
