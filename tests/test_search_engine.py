@@ -4,7 +4,7 @@ import sys
 import types
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 
 class DummySignal:
@@ -91,9 +91,9 @@ class SearchEngineTests(unittest.TestCase):
         completed = []
         worker.search_completed.connect(lambda results: completed.extend(results))
 
-        failed = types.SimpleNamespace(returncode=1, stdout="", stderr="IPC window not found")
+        failed = Mock(returncode=1, stdout="", stderr="IPC window not found")
         success_payload = {"results": [{"name": "a.txt", "path": "C:/tmp", "size": 1, "date_modified": ""}]}
-        success = types.SimpleNamespace(returncode=0, stdout=json.dumps(success_payload), stderr="")
+        success = Mock(returncode=0, stdout=json.dumps(success_payload), stderr="")
 
         with patch.object(self.module.os, "name", "nt"), \
              patch.object(self.module.time, "sleep"), \

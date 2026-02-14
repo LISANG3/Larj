@@ -17,6 +17,8 @@ from PyQt5.QtCore import QObject, pyqtSignal, QTimer, QThread
 
 class SearchWorker(QThread):
     """Worker thread for executing search without blocking UI"""
+    # Short best-effort delay for Everything to initialize IPC after process start.
+    EVERYTHING_STARTUP_DELAY = 0.8
     
     search_completed = pyqtSignal(list)
     search_failed = pyqtSignal(str)
@@ -35,7 +37,8 @@ class SearchWorker(QThread):
             result = self._run_search_command()
             if result.returncode != 0 and self._should_retry_with_everything(result):
                 if self._start_everything():
-                    time.sleep(0.8)
+                    # Give Everything a short moment to initialize IPC before retrying.
+                    time.sleep(self.EVERYTHING_STARTUP_DELAY)
                     result = self._run_search_command()
             
             if result.returncode == 0:
@@ -90,6 +93,7 @@ class SearchWorker(QThread):
         if os.name != "nt":
             return False
         output = f"{result.stdout}\n{result.stderr}".lower()
+        # Common es.exe errors when Everything IPC endpoint is unavailable.
         markers = ["ipc", "not running", "failed to connect", "createfilemapping"]
         return any(marker in output for marker in markers)
 
