@@ -1,0 +1,24 @@
+{
+  "apps": [
+    {
+      "id": "example-1",
+      "name": "记事本",
+      "path": "C:\\Windows\\System32\\notepad.exe",
+      "icon_path": "",
+      "args": "",
+      "usage_count": 0,
+      "created_at": "2026-02-14T00:00:00",
+      "last_used": null
+    },
+    {
+      "id": "example-2",
+      "name": "计算器",
+      "path": "C:\\Windows\\System32\\calc.exe",
+      "icon_path": "",
+      "args": "",
+      "usage_count": 0,
+      "created_at": "2026-02-14T00:00:00",
+      "last_used": null
+    }
+  ]
+}

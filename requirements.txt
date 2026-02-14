@@ -1,0 +1,11 @@
+# Larj - Windows Desktop Efficiency Tool
+# Python dependencies
+
+# GUI Framework
+PyQt5>=5.15.0
+
+# Input monitoring
+pynput>=1.7.0
+
+# System utilities
+psutil>=5.8.0

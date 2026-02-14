@@ -1,0 +1,12 @@
+{
+  "plugins": {
+    "calculator": {
+      "enabled": false,
+      "settings": {}
+    },
+    "notepad": {
+      "enabled": false,
+      "settings": {}
+    }
+  }
+}
