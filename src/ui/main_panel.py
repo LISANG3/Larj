@@ -11,7 +11,8 @@ from pathlib import Path
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton,
     QScrollArea, QLabel, QGridLayout, QListWidget, QListWidgetItem,
-    QStackedWidget, QFrame
+    QStackedWidget, QFrame, QDialog, QDialogButtonBox, QFormLayout,
+    QCheckBox, QSpinBox
 )
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QIcon, QPixmap
@@ -47,7 +48,8 @@ class MainPanel(QWidget):
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(10)
         
-        # Search box at top
+        # Search box and settings at top
+        header_layout = QHBoxLayout()
         self.search_box = QLineEdit()
         self.search_box.setPlaceholderText("搜索文件...")
         self.search_box.setStyleSheet("""
@@ -62,7 +64,13 @@ class MainPanel(QWidget):
                 border-color: #4CAF50;
             }
         """)
-        layout.addWidget(self.search_box)
+        header_layout.addWidget(self.search_box)
+
+        self.settings_button = QPushButton("设置")
+        self.settings_button.setFixedHeight(36)
+        self.settings_button.clicked.connect(self._on_settings_clicked)
+        header_layout.addWidget(self.settings_button)
+        layout.addLayout(header_layout)
         
         # Stacked widget for switching between app grid and search results
         self.stacked_widget = QStackedWidget()
@@ -226,6 +234,37 @@ class MainPanel(QWidget):
         """Handle add app button click"""
         # TODO: Open add app dialog
         self.logger.info("Add app clicked")
+
+    def _on_settings_clicked(self):
+        """Open settings dialog"""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("设置")
+        dialog.setModal(True)
+
+        form_layout = QFormLayout(dialog)
+
+        hotkey_enabled_checkbox = QCheckBox()
+        hotkey_enabled_checkbox.setChecked(self.config_manager.get("hotkey.enabled", True))
+        form_layout.addRow("启用热键", hotkey_enabled_checkbox)
+
+        follow_mouse_checkbox = QCheckBox()
+        follow_mouse_checkbox.setChecked(self.config_manager.get("window.follow_mouse", True))
+        form_layout.addRow("窗口跟随鼠标", follow_mouse_checkbox)
+
+        max_results_spinbox = QSpinBox()
+        max_results_spinbox.setRange(10, 500)
+        max_results_spinbox.setValue(self.config_manager.get("search.max_results", 50))
+        form_layout.addRow("搜索结果上限", max_results_spinbox)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        form_layout.addRow(buttons)
+
+        if dialog.exec_() == QDialog.Accepted:
+            self.config_manager.set("hotkey.enabled", hotkey_enabled_checkbox.isChecked())
+            self.config_manager.set("window.follow_mouse", follow_mouse_checkbox.isChecked())
+            self.config_manager.set("search.max_results", max_results_spinbox.value())
     
     def update_search_results(self, results: list):
         """Update search results list"""

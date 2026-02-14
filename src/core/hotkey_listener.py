@@ -100,11 +100,11 @@ class HotkeyListener(QObject):
             
             # XButton1 is mouse button 8 (side button)
             # XButton2 is mouse button 9 (side button)
-            if button_name in ['x1', 'x2'] and self.trigger_key in ['XButton1', 'XButton2']:
-                expected_button = 'x1' if self.trigger_key == 'XButton1' else 'x2'
-                if button_name != expected_button:
-                    return
-            elif self.trigger_key not in ['XButton1', 'XButton2']:
+            if self.trigger_key not in ['XButton1', 'XButton2']:
+                return
+
+            expected_button = 'x1' if self.trigger_key == 'XButton1' else 'x2'
+            if button_name != expected_button:
                 return
 
             if self._check_debounce():

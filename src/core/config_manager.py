@@ -38,6 +38,7 @@ class ConfigManager(QObject):
         "search": {
             "max_results": 50,
             "debounce_ms": 300,
+            "es_path": "everything/es.exe",
             "search_paths": [],
             "exclude_paths": [],
             "cache_timeout": 60

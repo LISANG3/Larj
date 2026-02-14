@@ -101,7 +101,13 @@ class SearchEngine(QObject):
         self.config_manager = config_manager
         
         # Everything executable path
-        self.es_path = Path("everything") / "es.exe"
+        project_root = Path(__file__).resolve().parents[2]
+        configured_es_path = self.config_manager.get("search.es_path", "")
+        if configured_es_path:
+            es_path = Path(configured_es_path).expanduser()
+            self.es_path = es_path if es_path.is_absolute() else (project_root / es_path).resolve()
+        else:
+            self.es_path = (project_root / "everything" / "es.exe").resolve()
         
         # Search state
         self.current_worker = None
