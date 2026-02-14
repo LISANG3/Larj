@@ -78,6 +78,11 @@ class SearchEngineTests(unittest.TestCase):
         expected = (Path(__file__).resolve().parents[1] / "bin" / "es.exe").resolve()
         self.assertEqual(engine.es_path, expected)
 
+    def test_tilde_configured_es_path_expands_user_home(self):
+        engine = self.module.SearchEngine(FakeConfigManager({"search.es_path": "~/bin/es.exe"}))
+        expected = Path("~/bin/es.exe").expanduser()
+        self.assertEqual(engine.es_path, expected)
+
 
 if __name__ == "__main__":
     unittest.main()
