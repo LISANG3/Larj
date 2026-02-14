@@ -6,8 +6,74 @@ Monitors mouse buttons and keyboard shortcuts to trigger the panel
 """
 
 import logging
+import threading
 from PyQt5.QtCore import QObject, pyqtSignal, QTimer
 from pynput import mouse, keyboard as pynput_keyboard
+
+DEFAULT_TRIGGER_KEY = "xbutton1"
+
+
+def detect_hotkey():
+    """
+    Blocking hotkey detection (keyboard or mouse), returns normalized string.
+    """
+    result = None
+    event = threading.Event()
+    modifiers = set()
+
+    def on_press(key):
+        nonlocal result
+
+        if key in (pynput_keyboard.Key.ctrl_l, pynput_keyboard.Key.ctrl_r, pynput_keyboard.Key.ctrl):
+            modifiers.add("ctrl")
+            return
+        if key in (pynput_keyboard.Key.alt_l, pynput_keyboard.Key.alt_r, pynput_keyboard.Key.alt):
+            modifiers.add("alt")
+            return
+        if key in (pynput_keyboard.Key.shift_l, pynput_keyboard.Key.shift_r, pynput_keyboard.Key.shift):
+            modifiers.add("shift")
+            return
+        if key in (pynput_keyboard.Key.cmd_l, pynput_keyboard.Key.cmd_r, pynput_keyboard.Key.cmd):
+            modifiers.add("meta")
+            return
+
+        try:
+            key_name = key.char.lower()
+        except AttributeError:
+            key_name = str(key).replace("Key.", "").lower()
+
+        modifier_order = ["ctrl", "alt", "shift", "meta"]
+        ordered_modifiers = [name for name in modifier_order if name in modifiers]
+        result = "+".join(ordered_modifiers + [key_name]) if ordered_modifiers else key_name
+        event.set()
+        return False
+
+    def on_click(x, y, button, pressed):
+        nonlocal result
+        if pressed:
+            button_name = button.name if hasattr(button, "name") else str(button)
+            button_map = {
+                "left": "mouse_left",
+                "right": "mouse_right",
+                "middle": "mouse_middle",
+                "x1": "xbutton1",
+                "x2": "xbutton2",
+            }
+            normalized = str(button_name).lower()
+            result = button_map.get(normalized, normalized)
+            event.set()
+            return False
+
+    k_listener = pynput_keyboard.Listener(on_press=on_press)
+    m_listener = mouse.Listener(on_click=on_click)
+    k_listener.start()
+    m_listener.start()
+    try:
+        event.wait()
+    finally:
+        k_listener.stop()
+        m_listener.stop()
+    return result
 
 
 class HotkeyListener(QObject):
@@ -42,8 +108,12 @@ class HotkeyListener(QObject):
     def reload_config(self):
         """Reload configuration"""
         try:
-            self.trigger_key = self.config_manager.get("hotkey.trigger_key", "XButton1")
-            self.fallback_keys = self.config_manager.get("hotkey.fallback_keys", ["Ctrl+Space"])
+            self.trigger_key = self._normalize_hotkey(self.config_manager.get("hotkey.trigger_key", DEFAULT_TRIGGER_KEY))
+            self.fallback_keys = [
+                normalized for normalized in
+                (self._normalize_hotkey(k) for k in self.config_manager.get("hotkey.fallback_keys", ["Ctrl+Space"]))
+                if normalized != self.trigger_key
+            ]
             self.enabled = self.config_manager.get("hotkey.enabled", True)
             
             self.logger.info(f"Hotkey config reloaded: {self.trigger_key}, fallback: {self.fallback_keys}")
@@ -95,16 +165,8 @@ class HotkeyListener(QObject):
             return
         
         try:
-            # Check if it's the trigger button
             button_name = button.name if hasattr(button, 'name') else str(button)
-            
-            # XButton1 is mouse button 8 (side button)
-            # XButton2 is mouse button 9 (side button)
-            if self.trigger_key not in ['XButton1', 'XButton2']:
-                return
-
-            expected_button = 'x1' if self.trigger_key == 'XButton1' else 'x2'
-            if button_name != expected_button:
+            if self._normalize_mouse_button(button_name) != self.trigger_key:
                 return
 
             if self._check_debounce():
@@ -125,10 +187,14 @@ class HotkeyListener(QObject):
                 return
 
             self.pressed_keys.add(key_name)
+            if self._is_shortcut_triggered(self.trigger_key):
+                if self._check_debounce():
+                    self.logger.debug(f"Keyboard trigger {self.trigger_key} triggered")
+                    self.hotkey_triggered.emit()
+                return
 
             for shortcut in self.fallback_keys:
-                required_keys = {part.strip().lower() for part in shortcut.split('+') if part.strip()}
-                if required_keys and required_keys.issubset(self.pressed_keys):
+                if self._is_shortcut_triggered(shortcut):
                     if self._check_debounce():
                         self.logger.debug(f"Keyboard shortcut {shortcut} triggered")
                         self.hotkey_triggered.emit()
@@ -168,7 +234,34 @@ class HotkeyListener(QObject):
             pynput_keyboard.Key.cmd_r: "meta",
             pynput_keyboard.Key.space: "space",
         }
-        return key_map.get(key)
+        mapped_key = key_map.get(key)
+        if mapped_key:
+            return mapped_key
+
+        key_str = str(key)
+        if key_str.startswith("Key."):
+            return key_str.replace("Key.", "").lower()
+        return None
+
+    def _normalize_hotkey(self, hotkey):
+        """Normalize configured hotkey string"""
+        return str(hotkey).strip().lower()
+
+    def _normalize_mouse_button(self, button_name: str) -> str:
+        button_map = {
+            "x1": "xbutton1",
+            "x2": "xbutton2",
+            "left": "mouse_left",
+            "right": "mouse_right",
+            "middle": "mouse_middle",
+        }
+        normalized = str(button_name).strip().lower()
+        return button_map.get(normalized, normalized)
+
+    def _is_shortcut_triggered(self, shortcut: str) -> bool:
+        normalized = self._normalize_hotkey(shortcut)
+        required_keys = {part.strip() for part in normalized.split('+') if part.strip()}
+        return bool(required_keys) and required_keys.issubset(self.pressed_keys)
     
     def _check_debounce(self) -> bool:
         """Check if enough time has passed since last trigger (debounce)"""

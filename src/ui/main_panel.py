@@ -12,10 +12,11 @@ from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton,
     QScrollArea, QLabel, QGridLayout, QListWidget, QListWidgetItem,
     QStackedWidget, QFrame, QDialog, QDialogButtonBox, QFormLayout,
-    QCheckBox, QSpinBox
+    QCheckBox, QSpinBox, QFileDialog, QMessageBox
 )
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QIcon, QPixmap
+from src.core.hotkey_listener import detect_hotkey, DEFAULT_TRIGGER_KEY
 
 
 class MainPanel(QWidget):
@@ -34,6 +35,7 @@ class MainPanel(QWidget):
         self.search_engine = search_engine
         self.application_manager = application_manager
         self.plugin_system = plugin_system
+        self._settings_dialog = None
         
         self._setup_ui()
         self._connect_signals()
@@ -232,12 +234,24 @@ class MainPanel(QWidget):
     
     def _on_add_app_clicked(self):
         """Handle add app button click"""
-        # TODO: Open add app dialog
-        self.logger.info("Add app clicked")
+        try:
+            file_filter = "Applications (*.exe *.bat *.cmd *.lnk);;All Files (*)" if os.name == "nt" else "All Files (*)"
+            file_path, _ = QFileDialog.getOpenFileName(self, "选择应用程序", "", file_filter)
+            if not file_path:
+                return
+
+            app_name = Path(file_path).stem
+            self.application_manager.add_app(app_name, file_path)
+            self._load_apps()
+            self.logger.info(f"Added app: {app_name}")
+        except Exception as e:
+            self.logger.error(f"Failed to add app: {e}", exc_info=True)
+            QMessageBox.warning(self, "添加应用失败", str(e))
 
     def _on_settings_clicked(self):
         """Open settings dialog"""
         dialog = QDialog(self)
+        self._settings_dialog = dialog
         dialog.setWindowTitle("设置")
         dialog.setModal(True)
 
@@ -246,6 +260,25 @@ class MainPanel(QWidget):
         hotkey_enabled_checkbox = QCheckBox()
         hotkey_enabled_checkbox.setChecked(self.config_manager.get("hotkey.enabled", True))
         form_layout.addRow("启用热键", hotkey_enabled_checkbox)
+
+        hotkey_widget = QWidget()
+        hotkey_layout = QHBoxLayout(hotkey_widget)
+        hotkey_layout.setContentsMargins(0, 0, 0, 0)
+        hotkey_input = QLineEdit()
+        hotkey_input.setText(self.config_manager.get("hotkey.trigger_key", DEFAULT_TRIGGER_KEY))
+        detect_hotkey_button = QPushButton("检测")
+        hotkey_layout.addWidget(hotkey_input)
+        hotkey_layout.addWidget(detect_hotkey_button)
+        form_layout.addRow("触发热键", hotkey_widget)
+
+        def on_detect_hotkey():
+            dialog.setWindowTitle("设置（按下任意键或鼠标键）")
+            detected = detect_hotkey()
+            if detected:
+                hotkey_input.setText(detected)
+            dialog.setWindowTitle("设置")
+
+        detect_hotkey_button.clicked.connect(on_detect_hotkey)
 
         follow_mouse_checkbox = QCheckBox()
         follow_mouse_checkbox.setChecked(self.config_manager.get("window.follow_mouse", True))
@@ -261,10 +294,14 @@ class MainPanel(QWidget):
         buttons.rejected.connect(dialog.reject)
         form_layout.addRow(buttons)
 
-        if dialog.exec_() == QDialog.Accepted:
-            self.config_manager.set("hotkey.enabled", hotkey_enabled_checkbox.isChecked())
-            self.config_manager.set("window.follow_mouse", follow_mouse_checkbox.isChecked())
-            self.config_manager.set("search.max_results", max_results_spinbox.value())
+        try:
+            if dialog.exec_() == QDialog.Accepted:
+                self.config_manager.set("hotkey.enabled", hotkey_enabled_checkbox.isChecked())
+                self.config_manager.set("hotkey.trigger_key", hotkey_input.text().strip() or DEFAULT_TRIGGER_KEY)
+                self.config_manager.set("window.follow_mouse", follow_mouse_checkbox.isChecked())
+                self.config_manager.set("search.max_results", max_results_spinbox.value())
+        finally:
+            self._settings_dialog = None
     
     def update_search_results(self, results: list):
         """Update search results list"""
@@ -320,3 +357,10 @@ class MainPanel(QWidget):
             self.hide()
         else:
             super().keyPressEvent(event)
+
+    def focusOutEvent(self, event):
+        """Hide the panel when focus is lost by clicking outside."""
+        if not (self._settings_dialog and self._settings_dialog.isVisible()):
+            self.hide()
+            self.clear_search()
+        super().focusOutEvent(event)
