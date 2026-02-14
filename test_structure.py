@@ -109,6 +109,29 @@ def test_plugin_system():
         return False
 
 
+def test_search_engine_cache():
+    """Test SearchEngine cache path"""
+    print("\nTesting SearchEngine cache...")
+    
+    try:
+        from src.core.config_manager import ConfigManager
+        from src.core.search_engine import SearchEngine
+        
+        engine = SearchEngine(ConfigManager())
+        results = [{"name": "demo.txt", "path": "C:/demo.txt"}]
+        engine._on_search_completed("demo", results)
+        
+        assert engine._check_cache("demo") is True, "Cache lookup failed"
+        print("✓ SearchEngine cache test passed")
+        return True
+        
+    except Exception as e:
+        print(f"✗ SearchEngine cache test failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
 def test_directory_structure():
     """Test that all required directories exist"""
     print("\nTesting directory structure...")
@@ -152,6 +175,7 @@ def main():
     results.append(("Module Imports", test_imports()))
     results.append(("ConfigManager", test_config_manager()))
     results.append(("PluginSystem", test_plugin_system()))
+    results.append(("SearchEngine Cache", test_search_engine_cache()))
     
     # Summary
     print("\n" + "=" * 50)
