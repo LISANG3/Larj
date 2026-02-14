@@ -1,9 +1,9 @@
-# Lark 技术架构文档
+# Larj 技术架构文档
 
 > **定位**：Windows桌面效率工具，极简主义鼠标矩阵面板
 > **目标**：提供快速文件搜索、应用启动、插件扩展的统一入口
 > **技术理念**：轻量级、响应优先、松耦合
-
+> **使用语言**：中文
 ---
 
 ## 一、核心架构
@@ -717,65 +717,6 @@
 - 系统信息（Windows版本、分辨率等）
 
 ---
-
-## 附录
-
-### A. 配置文件示例
-
-#### config/settings.json
-```json
-{
-  "hotkey": {
-    "trigger_key": "xbutton1",
-    "fallback_keys": []
-  },
-  "window": {
-    "width": 600,
-    "height": 400,
-    "opacity": 95,
-    "corner_radius": 8
-  },
-  "search": {
-    "max_results": 50,
-    "search_paths": ["C:\\", "D:\\"],
-    "exclude_paths": ["C:\\Windows"],
-    "enable_realtime": true
-  },
-  "plugins": {
-    "enabled_plugins": ["calculator", "note"],
-    "plugin_settings": {}
-  }
-}
-```
-
-#### config/apps.json
-```json
-{
-  "groups": [],
-  "apps": [
-    {
-      "id": "app_001",
-      "name": "Chrome",
-      "path": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-      "icon_path": "",
-      "use_count": 10,
-      "last_used": "2024-01-01T10:00:00",
-      "group_id": ""
-    }
-  ]
-}
-```
-
-### B. 插件接口定义
-
-#### 插件基类（概念定义）
-- `get_icon()`: 返回插件图标（文件路径或资源）
-- `handle_click()`: 处理插件点击事件
-- `get_info()`: 返回插件信息（名称、版本、作者、描述）
-- `on_load()`: 插件加载时回调（可选）
-- `on_unload()`: 插件卸载时回调（可选）
-- `get_settings()`: 返回插件配置界面（可选）
-
 ### C. 事件列表
 
 | 事件名称 | 事件参数 | 触发条件 | 订阅者 |
@@ -792,7 +733,10 @@
 | config_updated | 无 | 配置更新完成 | 主控制器、所有模块 |
 
 ---
+### 开发时可参考文档
+** everythinf命令行接口指南：https://www.voidtools.com/zh-cn/support/everything/command_line_interface/ **
+** skills使用指南：skills.md **
 
 **文档版本：** v1.0
-**最后更新：** 2024-01-01
+**最后更新：** 2026-02-14
 **维护者：** 开发团队
