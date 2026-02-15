@@ -869,6 +869,12 @@ class MainPanel(QWidget):
                 self.clear_search()
         return super().eventFilter(obj, event)
 
+    def closeEvent(self, event):
+        app = QApplication.instance()
+        if app:
+            app.removeEventFilter(self)
+        super().closeEvent(event)
+
     def paintEvent(self, event):
         """Paint the gradient background"""
         painter = QPainter(self)
