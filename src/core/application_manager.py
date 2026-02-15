@@ -129,38 +129,39 @@ class ApplicationManager(QObject):
             self.logger.error(f"Failed to update app: {e}")
     
     def launch_app(self, app_info: Dict):
-        """Launch application"""
+        """Launch application or open folder"""
         try:
             app_id = app_info.get("id")
             path = app_info.get("path")
             args = app_info.get("args", "")
+            is_folder = app_info.get("is_folder", False)
             
-            # Validate path
             if not Path(path).exists():
-                raise FileNotFoundError(f"Application not found: {path}")
+                raise FileNotFoundError(f"Path not found: {path}")
             
-            # Build launch command
-            if args:
-                cmd = f'"{path}" {args}'
+            if is_folder or Path(path).is_dir():
+                if os.name == 'nt':
+                    os.startfile(path)
+                else:
+                    subprocess.Popen(['xdg-open', path])
             else:
-                cmd = f'"{path}"'
+                if args:
+                    cmd = f'"{path}" {args}'
+                else:
+                    cmd = f'"{path}"'
+                
+                if os.name == 'nt':
+                    subprocess.Popen(cmd, shell=True)
+                else:
+                    subprocess.Popen(cmd, shell=True)
             
-            # Launch application
-            if os.name == 'nt':  # Windows
-                subprocess.Popen(cmd, shell=True)
-            else:
-                subprocess.Popen(cmd, shell=True)
-            
-            # Update usage statistics
             self._update_usage_stats(app_id)
-            
-            # Emit signal
             self.app_launched.emit(app_id)
             
-            self.logger.info(f"Launched app: {app_info.get('name')}")
+            self.logger.info(f"Launched: {app_info.get('name')}")
             
         except Exception as e:
-            self.logger.error(f"Failed to launch app: {e}", exc_info=True)
+            self.logger.error(f"Failed to launch: {e}", exc_info=True)
             raise
     
     def _update_usage_stats(self, app_id: str):

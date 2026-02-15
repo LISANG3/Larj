@@ -9,3 +9,6 @@ pynput>=1.7.0
 
 # System utilities
 psutil>=5.8.0
+
+# Windows API for icon extraction
+pywin32>=305; sys_platform == 'win32'
