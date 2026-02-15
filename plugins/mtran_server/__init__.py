@@ -5,6 +5,7 @@ MTranServer Plugin
 Quick access entry for local MTranServer translation service.
 """
 
+import logging
 import urllib.error
 import urllib.request
 import webbrowser
@@ -17,6 +18,10 @@ class MTranServerPlugin(PluginBase):
 
     UI_URL = "http://127.0.0.1:8989/ui/"
     HOME_URL = "https://github.com/xxnuo/MTranServer"
+    CONNECTION_TIMEOUT = 1
+
+    def __init__(self):
+        self.logger = logging.getLogger(__name__)
 
     def get_name(self) -> str:
         return "MTranServer"
@@ -29,7 +34,7 @@ class MTranServerPlugin(PluginBase):
             "name": "MTranServer",
             "version": "1.0.0",
             "author": "Larj Team",
-            "description": "离线翻译服务快捷入口（优先打开本地 MTranServer）"
+            "description": "Offline translation quick entry (优先打开本地 MTranServer)"
         }
 
     def handle_click(self):
@@ -38,13 +43,13 @@ class MTranServerPlugin(PluginBase):
 
     def _is_local_server_online(self) -> bool:
         try:
-            with urllib.request.urlopen(self.UI_URL, timeout=1):
+            with urllib.request.urlopen(self.UI_URL, timeout=self.CONNECTION_TIMEOUT):
                 return True
         except (urllib.error.URLError, ValueError, TimeoutError):
             return False
 
     def on_load(self):
-        print("MTranServer plugin loaded")
+        self.logger.info("MTranServer plugin loaded")
 
     def on_unload(self):
-        print("MTranServer plugin unloaded")
+        self.logger.info("MTranServer plugin unloaded")
