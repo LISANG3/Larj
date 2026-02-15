@@ -17,8 +17,9 @@ from PyQt5.QtWidgets import (
     QCheckBox, QSpinBox, QFileDialog, QMessageBox, QGraphicsDropShadowEffect,
     QMenu, QAction, QInputDialog
 )
-from PyQt5.QtCore import Qt, pyqtSignal, QTimer, QMimeData, QPoint, QEvent
+from PyQt5.QtCore import Qt, pyqtSignal, QTimer, QMimeData, QPoint
 from PyQt5.QtGui import QIcon, QPixmap, QFont, QColor, QPalette, QLinearGradient, QBrush, QPainter, QDrag
+from pynput import mouse
 from src.core.hotkey_listener import detect_hotkey, DEFAULT_TRIGGER_KEY
 
 
@@ -323,13 +324,12 @@ class MainPanel(QWidget):
         self.application_manager = application_manager
         self.plugin_system = plugin_system
         self._settings_dialog = None
+        self._mouse_listener = None
         
         self._setup_ui()
         self._connect_signals()
         self._load_apps()
-        app = QApplication.instance()
-        if app:
-            app.installEventFilter(self)
+        self._start_mouse_listener()
         
         self.logger.info("MainPanel initialized")
     
@@ -853,27 +853,38 @@ class MainPanel(QWidget):
         else:
             super().keyPressEvent(event)
 
-    def eventFilter(self, obj, event):
-        if (
-            self.isVisible()
-            and event.type() == QEvent.MouseButtonPress
-            and event.button() == Qt.LeftButton
-        ):
-            hide_on_focus_loss = self.config_manager.get("window.hide_on_focus_loss", True)
-            local_pos = self.mapFromGlobal(event.globalPos())
-            if (
-                hide_on_focus_loss
-                and not self.rect().contains(local_pos)
-                and not (self._settings_dialog and self._settings_dialog.isVisible())
-            ):
-                self.hide()
-                self.clear_search()
-        return super().eventFilter(obj, event)
+    def _start_mouse_listener(self):
+        """Start global mouse listener using pynput"""
+        def on_click(x, y, button, pressed):
+            if pressed and button == mouse.Button.left:
+                if not self.isVisible():
+                    return
+                
+                hide_on_focus_loss = self.config_manager.get("window.hide_on_focus_loss", True)
+                if not hide_on_focus_loss:
+                    return
+                
+                local_pos = self.mapFromGlobal(self.cursor().pos())
+                in_window = self.rect().contains(local_pos)
+                settings_visible = self._settings_dialog and self._settings_dialog.isVisible()
+                
+                if not in_window and not settings_visible:
+                    QTimer.singleShot(0, self._hide_and_clear)
+        
+        self._mouse_listener = mouse.Listener(on_click=on_click)
+        self._mouse_listener.start()
+        self.logger.debug("Global mouse listener started")
+    
+    def _hide_and_clear(self):
+        """Hide window and clear search (called from mouse listener thread)"""
+        self.hide()
+        self.clear_search()
 
     def closeEvent(self, event):
-        app = QApplication.instance()
-        if app:
-            app.removeEventFilter(self)
+        """Handle close event - stop mouse listener"""
+        if self._mouse_listener:
+            self._mouse_listener.stop()
+            self._mouse_listener = None
         super().closeEvent(event)
 
     def paintEvent(self, event):
