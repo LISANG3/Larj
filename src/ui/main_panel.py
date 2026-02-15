@@ -11,13 +11,13 @@ import struct
 from pathlib import Path
 import psutil
 from PyQt5.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton,
+    QWidget, QApplication, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton,
     QScrollArea, QLabel, QGridLayout, QListWidget, QListWidgetItem,
     QStackedWidget, QFrame, QDialog, QDialogButtonBox, QFormLayout,
     QCheckBox, QSpinBox, QFileDialog, QMessageBox, QGraphicsDropShadowEffect,
     QMenu, QAction, QInputDialog
 )
-from PyQt5.QtCore import Qt, pyqtSignal, QTimer, QMimeData, QPoint
+from PyQt5.QtCore import Qt, pyqtSignal, QTimer, QMimeData, QPoint, QEvent
 from PyQt5.QtGui import QIcon, QPixmap, QFont, QColor, QPalette, QLinearGradient, QBrush, QPainter, QDrag
 from src.core.hotkey_listener import detect_hotkey, DEFAULT_TRIGGER_KEY
 
@@ -327,6 +327,9 @@ class MainPanel(QWidget):
         self._setup_ui()
         self._connect_signals()
         self._load_apps()
+        app = QApplication.instance()
+        if app:
+            app.installEventFilter(self)
         
         self.logger.info("MainPanel initialized")
     
@@ -849,6 +852,28 @@ class MainPanel(QWidget):
             self.hide()
         else:
             super().keyPressEvent(event)
+
+    def eventFilter(self, obj, event):
+        if (
+            self.isVisible()
+            and event.type() == QEvent.MouseButtonPress
+            and event.button() == Qt.LeftButton
+        ):
+            hide_on_focus_loss = self.config_manager.get("window.hide_on_focus_loss", True)
+            if (
+                hide_on_focus_loss
+                and not self.geometry().contains(event.globalPos())
+                and not (self._settings_dialog and self._settings_dialog.isVisible())
+            ):
+                self.hide()
+                self.clear_search()
+        return super().eventFilter(obj, event)
+
+    def closeEvent(self, event):
+        app = QApplication.instance()
+        if app:
+            app.removeEventFilter(self)
+        super().closeEvent(event)
 
     def paintEvent(self, event):
         """Paint the gradient background"""
