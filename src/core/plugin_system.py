@@ -84,8 +84,13 @@ class PluginSystem(QObject):
                 self.logger.warning(f"Plugin directory not found: {self.plugin_dir}")
                 return
             
-            # Scan for Python files
+            # Scan for Python files and package directories
             plugin_files = list(self.plugin_dir.glob("*.py"))
+            plugin_files.extend(
+                p / "__init__.py"
+                for p in self.plugin_dir.iterdir()
+                if p.is_dir() and (p / "__init__.py").exists()
+            )
             
             self.logger.info(f"Discovered {len(plugin_files)} potential plugin files")
             
@@ -117,8 +122,10 @@ class PluginSystem(QObject):
                 self.logger.warning(f"Plugin already loaded: {plugin_name}")
                 return True
             
-            # Find plugin file
+            # Find plugin file or package
             plugin_file = self.plugin_dir / f"{plugin_name}.py"
+            if not plugin_file.exists():
+                plugin_file = self.plugin_dir / plugin_name / "__init__.py"
             
             if not plugin_file.exists():
                 self.logger.error(f"Plugin file not found: {plugin_file}")

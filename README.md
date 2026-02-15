@@ -87,7 +87,9 @@ Larj/
 │
 ├── plugins/              # 插件目录
 │   ├── calculator.py     # 计算器插件
-│   └── notepad.py        # 记事本插件
+│   ├── notepad.py        # 记事本插件
+│   └── mtran_server/     # MTranServer 插件（目录化插件）
+│       └── __init__.py
 │
 ├── src/                  # 源代码
 │   ├── core/             # 核心模块
@@ -160,7 +162,7 @@ Larj/
 
 ### 创建插件
 
-1. 在 `plugins/` 目录创建 `.py` 文件
+1. 在 `plugins/` 目录创建 `.py` 文件或插件目录（目录内需包含 `__init__.py`）
 2. 继承 `PluginBase` 类
 3. 实现必需方法
 
