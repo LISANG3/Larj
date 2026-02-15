@@ -860,9 +860,10 @@ class MainPanel(QWidget):
             and event.button() == Qt.LeftButton
         ):
             hide_on_focus_loss = self.config_manager.get("window.hide_on_focus_loss", True)
+            local_pos = self.mapFromGlobal(event.globalPos())
             if (
                 hide_on_focus_loss
-                and not self.geometry().contains(event.globalPos())
+                and not self.rect().contains(local_pos)
                 and not (self._settings_dialog and self._settings_dialog.isVisible())
             ):
                 self.hide()
