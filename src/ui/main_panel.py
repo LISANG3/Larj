@@ -18,7 +18,7 @@ from PyQt5.QtWidgets import (
     QMenu, QAction, QInputDialog
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QTimer, QMimeData, QPoint
-from PyQt5.QtGui import QIcon, QPixmap, QFont, QColor, QPalette, QLinearGradient, QBrush, QPainter, QDrag
+from PyQt5.QtGui import QIcon, QPixmap, QFont, QColor, QPalette, QLinearGradient, QBrush, QPainter, QPen, QDrag
 from pynput import mouse
 from src.core.hotkey_listener import detect_hotkey, DEFAULT_TRIGGER_KEY
 
@@ -732,36 +732,58 @@ class MainPanel(QWidget):
             QMessageBox.warning(self, "添加失败", str(e))
 
     def _on_settings_clicked(self):
-        """Open settings dialog"""
+        """Open settings dialog with tabs"""
+        from PyQt5.QtWidgets import QTabWidget, QScrollArea
+        
         dialog = QDialog(self)
         self._settings_dialog = dialog
         dialog.setWindowTitle("设置")
         dialog.setModal(True)
-        dialog.setMinimumWidth(400)
+        dialog.setMinimumSize(500, 500)
         dialog.setStyleSheet(ModernStyle.DIALOG_STYLE)
-
-        layout = QVBoxLayout(dialog)
-        layout.setSpacing(16)
-        layout.setContentsMargins(24, 24, 24, 24)
-
-        title = QLabel("应用设置")
-        title.setStyleSheet("""
-            font-size: 18px;
-            font-weight: 600;
-            color: #1e293b;
-            padding-bottom: 8px;
+        
+        main_layout = QVBoxLayout(dialog)
+        main_layout.setSpacing(0)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        
+        tab_widget = QTabWidget()
+        tab_widget.setStyleSheet("""
+            QTabWidget::pane {
+                border: none;
+                background: #ffffff;
+            }
+            QTabBar::tab {
+                padding: 12px 24px;
+                margin: 0;
+                background: #f8fafc;
+                color: #64748b;
+                border: none;
+                border-bottom: 2px solid transparent;
+            }
+            QTabBar::tab:selected {
+                background: #ffffff;
+                color: #3b82f6;
+                border-bottom: 2px solid #3b82f6;
+            }
+            QTabBar::tab:hover:!selected {
+                background: #f1f5f9;
+            }
         """)
-        layout.addWidget(title)
-
+        
+        general_widget = QWidget()
+        general_layout = QVBoxLayout(general_widget)
+        general_layout.setSpacing(16)
+        general_layout.setContentsMargins(24, 24, 24, 24)
+        
         form_widget = QWidget()
         form_layout = QFormLayout(form_widget)
         form_layout.setSpacing(16)
         form_layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
-
+        
         hotkey_enabled_checkbox = QCheckBox()
         hotkey_enabled_checkbox.setChecked(self.config_manager.get("hotkey.enabled", True))
         form_layout.addRow("启用热键", hotkey_enabled_checkbox)
-
+        
         hotkey_widget = QWidget()
         hotkey_layout = QHBoxLayout(hotkey_widget)
         hotkey_layout.setContentsMargins(0, 0, 0, 0)
@@ -770,21 +792,20 @@ class MainPanel(QWidget):
         hotkey_input.setMinimumWidth(150)
         hotkey_input.setText(self.config_manager.get("hotkey.trigger_key", DEFAULT_TRIGGER_KEY))
         detect_hotkey_button = QPushButton("检测")
-        detect_hotkey_button.setObjectName("detectBtn")
         detect_hotkey_button.setFixedWidth(60)
         hotkey_layout.addWidget(hotkey_input)
         hotkey_layout.addWidget(detect_hotkey_button)
         form_layout.addRow("触发热键", hotkey_widget)
-
+        
         def on_detect_hotkey():
             dialog.setWindowTitle("设置（按下任意键或鼠标键）")
             detected = detect_hotkey()
             if detected:
                 hotkey_input.setText(detected)
             dialog.setWindowTitle("设置")
-
+        
         detect_hotkey_button.clicked.connect(on_detect_hotkey)
-
+        
         follow_mouse_checkbox = QCheckBox()
         follow_mouse_checkbox.setChecked(self.config_manager.get("window.follow_mouse", True))
         form_layout.addRow("窗口跟随鼠标", follow_mouse_checkbox)
@@ -792,36 +813,69 @@ class MainPanel(QWidget):
         hide_on_focus_loss_checkbox = QCheckBox()
         hide_on_focus_loss_checkbox.setChecked(self.config_manager.get("window.hide_on_focus_loss", True))
         form_layout.addRow("点击外部自动隐藏", hide_on_focus_loss_checkbox)
-
+        
         max_results_spinbox = QSpinBox()
         max_results_spinbox.setRange(10, 500)
         max_results_spinbox.setValue(self.config_manager.get("search.max_results", 50))
         max_results_spinbox.setMinimumWidth(100)
         form_layout.addRow("搜索结果上限", max_results_spinbox)
-
-        layout.addWidget(form_widget)
+        
+        general_layout.addWidget(form_widget)
+        general_layout.addStretch()
+        
+        tab_widget.addTab(general_widget, "通用设置")
+        
+        plugin_widget = QWidget()
+        plugin_layout = QVBoxLayout(plugin_widget)
+        plugin_layout.setSpacing(16)
+        plugin_layout.setContentsMargins(24, 24, 24, 24)
         
         plugin_settings_widgets = {}
+        
         if self.plugin_system and self.plugin_system.plugins:
-            plugin_title = QLabel("插件设置")
-            plugin_title.setStyleSheet("""
-                font-size: 16px;
-                font-weight: 600;
-                color: #1e293b;
-                padding-top: 16px;
-                padding-bottom: 8px;
-            """)
-            layout.addWidget(plugin_title)
-            
             for plugin_name, plugin in self.plugin_system.plugins.items():
-                settings = plugin.get_settings()
+                plugin_info = plugin.get_info() if hasattr(plugin, 'get_info') else {}
+                settings = plugin.get_settings() if hasattr(plugin, 'get_settings') else {}
+                
+                plugin_group = QWidget()
+                plugin_group.setStyleSheet("""
+                    QWidget {
+                        background: #f8fafc;
+                        border-radius: 12px;
+                        border: 1px solid #e2e8f0;
+                    }
+                """)
+                group_layout = QVBoxLayout(plugin_group)
+                group_layout.setSpacing(12)
+                group_layout.setContentsMargins(16, 16, 16, 16)
+                
+                header_layout = QHBoxLayout()
+                
+                name_label = QLabel(plugin_info.get("name", plugin_name))
+                name_label.setStyleSheet("font-size: 15px; font-weight: 600; color: #1e293b; background: transparent;")
+                header_layout.addWidget(name_label)
+                
+                version_label = QLabel(f"v{plugin_info.get('version', '1.0')}")
+                version_label.setStyleSheet("font-size: 12px; color: #94a3b8; background: transparent;")
+                header_layout.addWidget(version_label)
+                header_layout.addStretch()
+                
+                group_layout.addLayout(header_layout)
+                
+                desc_label = QLabel(plugin_info.get("description", ""))
+                desc_label.setStyleSheet("font-size: 12px; color: #64748b; background: transparent;")
+                desc_label.setWordWrap(True)
+                group_layout.addWidget(desc_label)
+                
                 if settings:
-                    plugin_form = QWidget()
-                    plugin_form_layout = QFormLayout(plugin_form)
-                    plugin_form_layout.setSpacing(12)
-                    plugin_form_layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                    
                     plugin_settings_widgets[plugin_name] = {}
+                    
+                    settings_form = QWidget()
+                    settings_form.setStyleSheet("background: transparent;")
+                    settings_layout = QFormLayout(settings_form)
+                    settings_layout.setSpacing(10)
+                    settings_layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                    settings_layout.setContentsMargins(0, 8, 0, 0)
                     
                     for setting_key, setting_config in settings.items():
                         setting_type = setting_config.get("type", "text")
@@ -835,49 +889,81 @@ class MainPanel(QWidget):
                             widget.setEchoMode(QLineEdit.Password)
                             widget.setText(str(saved_value))
                             widget.setMinimumWidth(200)
-                        elif setting_type == "text":
-                            widget = QLineEdit()
-                            widget.setText(str(saved_value))
-                            widget.setMinimumWidth(200)
+                            widget.setStyleSheet("background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 10px;")
                         else:
                             widget = QLineEdit()
                             widget.setText(str(saved_value))
                             widget.setMinimumWidth(200)
+                            widget.setStyleSheet("background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 10px;")
                         
-                        plugin_form_layout.addRow(label, widget)
+                        settings_layout.addRow(label + ":", widget)
                         plugin_settings_widgets[plugin_name][setting_key] = widget
                     
-                    layout.addWidget(plugin_form)
+                    group_layout.addWidget(settings_form)
+                
+                plugin_layout.addWidget(plugin_group)
+        else:
+            no_plugin_label = QLabel("暂无已加载的插件")
+            no_plugin_label.setStyleSheet("color: #94a3b8; font-size: 14px;")
+            no_plugin_label.setAlignment(Qt.AlignCenter)
+            plugin_layout.addWidget(no_plugin_label)
         
-        layout.addStretch()
-
-        button_box = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
-        button_box.setStyleSheet("""
+        plugin_layout.addStretch()
+        
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setWidget(plugin_widget)
+        scroll_area.setStyleSheet("QScrollArea { border: none; background: #ffffff; }")
+        
+        tab_widget.addTab(scroll_area, "插件管理")
+        
+        main_layout.addWidget(tab_widget)
+        
+        button_container = QWidget()
+        button_container.setStyleSheet("background: #f8fafc; border-top: 1px solid #e2e8f0;")
+        button_layout = QHBoxLayout(button_container)
+        button_layout.setContentsMargins(24, 16, 24, 16)
+        button_layout.addStretch()
+        
+        save_btn = QPushButton("保存")
+        save_btn.setStyleSheet("""
             QPushButton {
-                padding: 10px 24px;
-                font-size: 13px;
-                font-weight: 500;
-                border-radius: 8px;
-            }
-            QPushButton[text="保存"] {
                 background: #3b82f6;
                 color: white;
+                padding: 10px 32px;
+                font-size: 13px;
+                font-weight: 500;
+                border: none;
+                border-radius: 8px;
             }
-            QPushButton[text="保存"]:hover {
+            QPushButton:hover {
                 background: #2563eb;
             }
-            QPushButton[text="取消"] {
+        """)
+        save_btn.clicked.connect(dialog.accept)
+        
+        cancel_btn = QPushButton("取消")
+        cancel_btn.setStyleSheet("""
+            QPushButton {
                 background: #f1f5f9;
                 color: #475569;
+                padding: 10px 32px;
+                font-size: 13px;
+                font-weight: 500;
+                border: none;
+                border-radius: 8px;
             }
-            QPushButton[text="取消"]:hover {
+            QPushButton:hover {
                 background: #e2e8f0;
             }
         """)
-        button_box.accepted.connect(dialog.accept)
-        button_box.rejected.connect(dialog.reject)
-        layout.addWidget(button_box)
-
+        cancel_btn.clicked.connect(dialog.reject)
+        
+        button_layout.addWidget(cancel_btn)
+        button_layout.addWidget(save_btn)
+        
+        main_layout.addWidget(button_container)
+        
         try:
             if dialog.exec_() == QDialog.Accepted:
                 self.config_manager.set("hotkey.enabled", hotkey_enabled_checkbox.isChecked())
@@ -995,8 +1081,8 @@ class MainPanel(QWidget):
         gradient.setColorAt(1, QColor("#f1f5f9"))
         
         painter.setBrush(QBrush(gradient))
-        painter.setPen(Qt.NoPen)
-        painter.drawRoundedRect(self.rect(), 16, 16)
+        painter.setPen(QPen(QColor("#e2e8f0"), 1))
+        painter.drawRect(self.rect())
         
         super().paintEvent(event)
 

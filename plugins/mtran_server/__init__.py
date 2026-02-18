@@ -11,15 +11,15 @@ import json
 import logging
 import time
 from datetime import datetime
-from typing import Dict, Optional
+from typing import Dict
 
 import requests
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTextEdit, QPushButton,
-    QLabel, QComboBox, QWidget, QFrame, QSizePolicy
+    QLabel, QComboBox, QWidget
 )
-from PyQt5.QtCore import QThread, pyqtSignal, Qt, QPropertyAnimation, QEasingCurve
-from PyQt5.QtGui import QFont, QColor, QLinearGradient, QBrush, QPainter, QPen
+from PyQt5.QtCore import QThread, pyqtSignal, Qt
+from PyQt5.QtGui import QFont
 
 from src.core.plugin_system import PluginBase
 
@@ -186,30 +186,20 @@ class TranslationDialog(QDialog):
         super().__init__(parent)
         self.plugin = plugin
         self.worker = None
-        self._drag_pos = None
         self.setup_ui()
     
     def setup_ui(self):
         self.setWindowTitle("腾讯翻译")
         self.setMinimumSize(480, 420)
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog)
-        
-        self._main_widget = QWidget(self)
-        self._main_widget.setGeometry(0, 0, self.width(), self.height())
-        self._main_widget.setAttribute(Qt.WA_StyledBackground)
-        self._main_widget.setAutoFillBackground(True)
+        self.setWindowFlags(Qt.Dialog)
         
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(16, 16, 16, 16)
-        main_layout.addWidget(self._main_widget)
-        
-        layout = QVBoxLayout(self._main_widget)
-        layout.setSpacing(0)
-        layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+        main_layout.setContentsMargins(0, 0, 0, 0)
         
         title_bar = QWidget()
         title_bar.setFixedHeight(48)
-        title_bar.setStyleSheet("background: transparent;")
+        title_bar.setStyleSheet("background: #f8fafc;")
         title_layout = QHBoxLayout(title_bar)
         title_layout.setContentsMargins(20, 0, 16, 0)
         
@@ -242,13 +232,13 @@ class TranslationDialog(QDialog):
         close_btn.clicked.connect(self.close)
         title_layout.addWidget(close_btn)
         
-        layout.addWidget(title_bar)
+        main_layout.addWidget(title_bar)
         
         content_widget = QWidget()
-        content_widget.setStyleSheet("background: transparent;")
+        content_widget.setStyleSheet("background: #ffffff;")
         content_layout = QVBoxLayout(content_widget)
         content_layout.setSpacing(16)
-        content_layout.setContentsMargins(20, 0, 20, 20)
+        content_layout.setContentsMargins(20, 16, 20, 20)
         
         lang_widget = QWidget()
         lang_widget.setStyleSheet("background: transparent;")
@@ -370,7 +360,7 @@ class TranslationDialog(QDialog):
         
         content_layout.addLayout(status_layout)
         
-        layout.addWidget(content_widget)
+        main_layout.addWidget(content_widget)
     
     def _get_combo_style(self):
         return """
@@ -434,31 +424,6 @@ class TranslationDialog(QDialog):
             self.char_count_label.setStyleSheet("color: #ef4444; font-size: 12px; background: transparent;")
         else:
             self.char_count_label.setStyleSheet("color: #94a3b8; font-size: 12px; background: transparent;")
-    
-    def paintEvent(self, event):
-        painter = QPainter(self._main_widget)
-        painter.setRenderHint(QPainter.Antialiasing)
-        
-        painter.setBrush(QBrush(QColor("#ffffff")))
-        painter.setPen(QPen(QColor("#e2e8f0"), 1))
-        painter.drawRoundedRect(self._main_widget.rect(), 16, 16)
-        
-        super().paintEvent(event)
-    
-    def mousePressEvent(self, event):
-        if event.button() == Qt.LeftButton and event.pos().y() < 60:
-            self._drag_pos = event.globalPos() - self.frameGeometry().topLeft()
-    
-    def mouseMoveEvent(self, event):
-        if self._drag_pos:
-            self.move(event.globalPos() - self._drag_pos)
-    
-    def mouseReleaseEvent(self, event):
-        self._drag_pos = None
-    
-    def resizeEvent(self, event):
-        self._main_widget.setGeometry(0, 0, self.width(), self.height())
-        super().resizeEvent(event)
     
     def do_translate(self):
         text = self.source_text.toPlainText().strip()
