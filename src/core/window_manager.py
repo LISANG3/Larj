@@ -74,11 +74,9 @@ class WindowManager:
                 self.plugin_system
             )
             
-            # Set window properties
             self.window.setFixedSize(self.width, self.height)
             self.window.setWindowOpacity(self.opacity)
             
-            # Window flags for floating panel
             self.window.setWindowFlags(
                 Qt.Window |
                 Qt.FramelessWindowHint |
@@ -86,8 +84,7 @@ class WindowManager:
                 Qt.Tool
             )
             
-            # Set window attributes
-            self.window.setAttribute(Qt.WA_TranslucentBackground)
+            self.window.setAttribute(Qt.WA_ShowWithoutActivating, False)
             
             self.logger.info("Main panel window created")
             
