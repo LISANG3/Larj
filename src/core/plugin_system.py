@@ -157,6 +157,17 @@ class PluginSystem(QObject):
             # Instantiate plugin
             plugin_instance = plugin_class()
             
+            # Load saved settings from config
+            if hasattr(plugin_instance, 'get_settings'):
+                saved_settings = {}
+                settings_def = plugin_instance.get_settings()
+                for setting_key in settings_def:
+                    saved_value = self.config_manager.get(f"plugins.{plugin_name}.{setting_key}")
+                    if saved_value is not None:
+                        saved_settings[setting_key] = saved_value
+                if saved_settings and hasattr(plugin_instance, 'apply_settings'):
+                    plugin_instance.apply_settings(saved_settings)
+            
             # Call on_load if implemented
             if hasattr(plugin_instance, 'on_load'):
                 plugin_instance.on_load()

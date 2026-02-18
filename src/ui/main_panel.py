@@ -461,7 +461,7 @@ class MainPanel(QWidget):
             self.stacked_widget.setCurrentWidget(self.app_grid_widget)
     
     def _load_apps(self):
-        """Load applications into grid"""
+        """Load applications and plugins into grid"""
         try:
             for i in reversed(range(self.app_grid.count())):
                 item = self.app_grid.itemAt(i)
@@ -470,18 +470,57 @@ class MainPanel(QWidget):
             
             apps = self.application_manager.get_apps()
             
+            all_items = list(apps)
+            
+            if self.plugin_system:
+                for plugin_name, plugin in self.plugin_system.plugins.items():
+                    all_items.append({
+                        "name": plugin.get_info().get("name", plugin_name),
+                        "type": "plugin",
+                        "plugin_instance": plugin
+                    })
+            
             cols = 4
-            for i, app in enumerate(apps):
+            for i, item in enumerate(all_items):
                 row = i // cols
                 col = i % cols
                 
-                app_button = self._create_app_button(app)
-                self.app_grid.addWidget(app_button, row, col)
+                if item.get("type") == "plugin":
+                    button = self._create_plugin_button(item)
+                else:
+                    button = self._create_app_button(item)
+                self.app_grid.addWidget(button, row, col)
             
-            self.logger.debug(f"Loaded {len(apps)} apps")
+            self.logger.debug(f"Loaded {len(apps)} apps and {len(all_items) - len(apps)} plugins")
             
         except Exception as e:
             self.logger.error(f"Failed to load apps: {e}", exc_info=True)
+    
+    def _create_plugin_button(self, plugin_item: dict) -> QPushButton:
+        """Create a button for a plugin"""
+        plugin = plugin_item.get("plugin_instance")
+        plugin_info = plugin.get_info()
+        
+        button = QPushButton(plugin_info.get("name", "Plugin"))
+        button.setFixedSize(130, 90)
+        button.setStyleSheet(ModernStyle.APP_BUTTON_STYLE)
+        button.setCursor(Qt.PointingHandCursor)
+        
+        button.setProperty("plugin_data", plugin_item)
+        button.clicked.connect(lambda: self._on_plugin_clicked(plugin))
+        
+        from PyQt5.QtGui import QFont
+        button.setFont(QFont("Segoe UI", 11, QFont.Bold))
+        
+        return button
+    
+    def _on_plugin_clicked(self, plugin):
+        """Handle plugin button click"""
+        try:
+            if self.plugin_system:
+                self.plugin_system.handle_plugin_click(plugin)
+        except Exception as e:
+            self.logger.error(f"Failed to handle plugin click: {e}", exc_info=True)
     
     def _create_app_button(self, app: dict) -> QPushButton:
         """Create a button for an app"""
@@ -761,6 +800,55 @@ class MainPanel(QWidget):
         form_layout.addRow("搜索结果上限", max_results_spinbox)
 
         layout.addWidget(form_widget)
+        
+        plugin_settings_widgets = {}
+        if self.plugin_system and self.plugin_system.plugins:
+            plugin_title = QLabel("插件设置")
+            plugin_title.setStyleSheet("""
+                font-size: 16px;
+                font-weight: 600;
+                color: #1e293b;
+                padding-top: 16px;
+                padding-bottom: 8px;
+            """)
+            layout.addWidget(plugin_title)
+            
+            for plugin_name, plugin in self.plugin_system.plugins.items():
+                settings = plugin.get_settings()
+                if settings:
+                    plugin_form = QWidget()
+                    plugin_form_layout = QFormLayout(plugin_form)
+                    plugin_form_layout.setSpacing(12)
+                    plugin_form_layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                    
+                    plugin_settings_widgets[plugin_name] = {}
+                    
+                    for setting_key, setting_config in settings.items():
+                        setting_type = setting_config.get("type", "text")
+                        label = setting_config.get("label", setting_key)
+                        default_value = setting_config.get("default", "")
+                        
+                        saved_value = self.config_manager.get(f"plugins.{plugin_name}.{setting_key}", default_value)
+                        
+                        if setting_type == "password":
+                            widget = QLineEdit()
+                            widget.setEchoMode(QLineEdit.Password)
+                            widget.setText(str(saved_value))
+                            widget.setMinimumWidth(200)
+                        elif setting_type == "text":
+                            widget = QLineEdit()
+                            widget.setText(str(saved_value))
+                            widget.setMinimumWidth(200)
+                        else:
+                            widget = QLineEdit()
+                            widget.setText(str(saved_value))
+                            widget.setMinimumWidth(200)
+                        
+                        plugin_form_layout.addRow(label, widget)
+                        plugin_settings_widgets[plugin_name][setting_key] = widget
+                    
+                    layout.addWidget(plugin_form)
+        
         layout.addStretch()
 
         button_box = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
@@ -797,6 +885,16 @@ class MainPanel(QWidget):
                 self.config_manager.set("window.follow_mouse", follow_mouse_checkbox.isChecked())
                 self.config_manager.set("window.hide_on_focus_loss", hide_on_focus_loss_checkbox.isChecked())
                 self.config_manager.set("search.max_results", max_results_spinbox.value())
+                
+                for plugin_name, widgets in plugin_settings_widgets.items():
+                    if plugin_name in self.plugin_system.plugins:
+                        plugin = self.plugin_system.plugins[plugin_name]
+                        settings = {}
+                        for setting_key, widget in widgets.items():
+                            value = widget.text()
+                            settings[setting_key] = value
+                            self.config_manager.set(f"plugins.{plugin_name}.{setting_key}", value)
+                        plugin.apply_settings(settings)
         finally:
             self._settings_dialog = None
     
