@@ -556,9 +556,9 @@ class TestExistingPlugins:
             "secret_key": "test_key",
             "region": "ap-shanghai"
         })
-        assert plugin._secret_id == "test_id"
-        assert plugin._secret_key == "test_key"
-        assert plugin._region == "ap-shanghai"
+        assert plugin.secret_id == "test_id"
+        assert plugin.secret_key == "test_key"
+        assert plugin.region == "ap-shanghai"
 
     def test_mtran_apply_settings(self):
         from plugins.mtran_server import TencentTranslationPlugin
@@ -568,6 +568,6 @@ class TestExistingPlugins:
             "secret_key": "test_key",
             "region": "ap-shanghai"
         })
-        assert plugin._secret_id == "test_id"
-        assert plugin._secret_key == "test_key"
-        assert plugin._region == "ap-shanghai"
+        assert plugin.secret_id == "test_id"
+        assert plugin.secret_key == "test_key"
+        assert plugin.region == "ap-shanghai"

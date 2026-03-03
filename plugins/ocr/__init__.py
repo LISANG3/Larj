@@ -274,9 +274,9 @@ class TencentOcrPlugin(PluginBase):
     
     def __init__(self):
         self.logger = logging.getLogger(__name__)
-        self._secret_id = ""
-        self._secret_key = ""
-        self._region = "ap-beijing"
+        self.secret_id = ""
+        self.secret_key = ""
+        self.region = "ap-beijing"
         self._capture_widget = None
         self._result_dialog = None
         self._temp_image_path = None
@@ -326,7 +326,7 @@ class TencentOcrPlugin(PluginBase):
     def do_ocr(self):
         """Execute OCR using Tencent Cloud API"""
         try:
-            if not self._secret_id or not self._secret_key:
+            if not self.secret_id or not self.secret_key:
                 self._result_dialog.set_error("请先在设置中配置 SecretId 和 SecretKey")
                 return
             
@@ -345,9 +345,9 @@ class TencentOcrPlugin(PluginBase):
             payload = json.dumps(payload_dict)
             
             headers = TencentSigner.sign(
-                self._secret_id, self._secret_key,
+                self.secret_id, self.secret_key,
                 service, host, action, version,
-                self._region, payload
+                self.region, payload
             )
             
             url = f"https://{host}/"
@@ -399,11 +399,11 @@ class TencentOcrPlugin(PluginBase):
     
     def apply_settings(self, settings: dict):
         if "secret_id" in settings:
-            self._secret_id = settings["secret_id"]
+            self.secret_id = settings["secret_id"]
         if "secret_key" in settings:
-            self._secret_key = settings["secret_key"]
+            self.secret_key = settings["secret_key"]
         if "region" in settings:
-            self._region = settings["region"]
+            self.region = settings["region"]
 
 
 plugin_class = TencentOcrPlugin

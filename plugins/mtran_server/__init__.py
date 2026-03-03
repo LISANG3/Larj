@@ -435,8 +435,8 @@ class TranslationDialog(QDialog):
             self.status_label.setText("文本长度超过6000字符限制")
             return
         
-        secret_id = self.plugin._secret_id
-        secret_key = self.plugin._secret_key
+        secret_id = self.plugin.secret_id
+        secret_key = self.plugin.secret_key
         
         if not secret_id or not secret_key:
             self.status_label.setText("请先配置 SecretId 和 SecretKey")
@@ -451,7 +451,7 @@ class TranslationDialog(QDialog):
         
         self.worker = TranslationWorker(
             secret_id, secret_key, text, source_lang, target_lang,
-            self.plugin._region
+            self.plugin.region
         )
         self.worker.finished.connect(self.on_translation_finished)
         self.worker.error.connect(self.on_translation_error)
@@ -506,9 +506,9 @@ class TencentTranslationPlugin(PluginBase):
     
     def __init__(self):
         self.logger = logging.getLogger(__name__)
-        self._secret_id = ""
-        self._secret_key = ""
-        self._region = "ap-beijing"
+        self.secret_id = ""
+        self.secret_key = ""
+        self.region = "ap-beijing"
         self._dialog = None
     
     def get_metadata(self) -> dict:
@@ -544,11 +544,11 @@ class TencentTranslationPlugin(PluginBase):
     
     def apply_settings(self, settings: dict):
         if "secret_id" in settings:
-            self._secret_id = settings["secret_id"]
+            self.secret_id = settings["secret_id"]
         if "secret_key" in settings:
-            self._secret_key = settings["secret_key"]
+            self.secret_key = settings["secret_key"]
         if "region" in settings:
-            self._region = settings["region"]
+            self.region = settings["region"]
 
 
 plugin_class = TencentTranslationPlugin
