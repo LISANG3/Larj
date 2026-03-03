@@ -231,7 +231,11 @@ class PluginSystem(QObject):
             return
 
         # Temporarily instantiate to get metadata
-        temp_instance = plugin_class()
+        try:
+            temp_instance = plugin_class()
+        except Exception as e:
+            self.logger.error(f"Failed to instantiate plugin class in '{plugin_name}': {e}", exc_info=True)
+            return
         metadata = temp_instance.get_metadata()
 
         if not isinstance(metadata, dict) or "plugin_id" not in metadata:
@@ -439,7 +443,7 @@ class PluginSystem(QObject):
         """Write JSON atomically using temp file + rename"""
         dir_path = file_path.parent
         try:
-            fd, tmp_path = tempfile.mkstemp(dir=str(dir_path), suffix=".tmp")
+            fd, tmp_path = tempfile.mkstemp(dir=str(dir_path), suffix=".json.tmp")
             try:
                 with os.fdopen(fd, 'w', encoding='utf-8') as f:
                     json.dump(data, f, indent=2, ensure_ascii=False)

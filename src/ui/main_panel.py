@@ -897,8 +897,8 @@ class MainPanel(QWidget):
                         saved_value = saved_config.get(setting_key, default_value)
                         
                         widget = QLineEdit()
-                        # Use password mode for keys/secrets
-                        if "key" in setting_key.lower() and "id" not in setting_key.lower():
+                        # Use password mode if schema declares secret: true
+                        if schema.get("secret", False):
                             widget.setEchoMode(QLineEdit.Password)
                         widget.setText(str(saved_value))
                         widget.setMinimumWidth(200)

@@ -291,7 +291,7 @@ class TencentOcrPlugin(PluginBase):
             "description": "屏幕文字识别 - 腾讯云 OCR",
             "config_schema": {
                 "secret_id": {"type": "str", "required": True, "desc": "腾讯云 API 密钥 ID"},
-                "secret_key": {"type": "str", "required": True, "desc": "腾讯云 API 密钥 Key"},
+                "secret_key": {"type": "str", "required": True, "secret": True, "desc": "腾讯云 API 密钥 Key"},
                 "region": {"type": "str", "required": True, "default": "ap-beijing", "desc": "API 地域 (如 ap-beijing)"}
             }
         }
