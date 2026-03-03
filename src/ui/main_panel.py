@@ -320,7 +320,7 @@ class MainPanel(QWidget):
         self.plugin_system = plugin_system
         self._settings_dialog = None
         self._mouse_listener = None
-        self._bg_pixmap_cache = None  # (path, size) -> scaled QPixmap
+        self._bg_pixmap_cache = None  # ((path, width, height), scaled_pixmap)
         
         self._setup_ui()
         self._connect_signals()
@@ -1230,7 +1230,7 @@ class MainPanel(QWidget):
             image_path = self.config_manager.get("appearance.background_image", "")
             if image_path and os.path.exists(image_path):
                 cache_key = (image_path, self.size().width(), self.size().height())
-                if self._bg_pixmap_cache and self._bg_pixmap_cache[0] == cache_key:
+                if self._bg_pixmap_cache is not None and self._bg_pixmap_cache[0] == cache_key:
                     scaled = self._bg_pixmap_cache[1]
                 else:
                     pixmap = QPixmap(image_path)
@@ -1243,7 +1243,7 @@ class MainPanel(QWidget):
                         self._bg_pixmap_cache = (cache_key, scaled)
                     else:
                         scaled = None
-                if scaled:
+                if scaled is not None:
                     painter.drawPixmap(0, 0, scaled)
                     painter.setPen(QPen(QColor("#e2e8f0"), 1))
                     painter.setBrush(Qt.NoBrush)
