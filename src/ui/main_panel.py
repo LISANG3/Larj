@@ -15,7 +15,7 @@ from PyQt5.QtWidgets import (
     QScrollArea, QLabel, QGridLayout, QListWidget, QListWidgetItem,
     QStackedWidget, QFrame, QDialog, QDialogButtonBox, QFormLayout,
     QCheckBox, QSpinBox, QFileDialog, QMessageBox, QGraphicsDropShadowEffect,
-    QMenu, QAction, QInputDialog
+    QMenu, QAction, QInputDialog, QColorDialog, QComboBox
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QTimer, QMimeData, QPoint
 from PyQt5.QtGui import QIcon, QPixmap, QFont, QColor, QPalette, QLinearGradient, QBrush, QPainter, QPen, QDrag
@@ -570,6 +570,9 @@ class MainPanel(QWidget):
         
         edit_action = menu.addAction("编辑")
         edit_action.triggered.connect(lambda: self._edit_app(app))
+
+        rename_action = menu.addAction("重命名")
+        rename_action.triggered.connect(lambda: self._rename_app(app))
         
         delete_action = menu.addAction("删除")
         delete_action.triggered.connect(lambda: self._delete_app(app))
@@ -629,7 +632,18 @@ class MainPanel(QWidget):
                 updated_app["args"] = new_args
                 self.application_manager.update_app(app.get("id"), updated_app)
                 self._load_apps()
-    
+
+    def _rename_app(self, app: dict):
+        """Quickly rename an application icon"""
+        new_name, ok = QInputDialog.getText(
+            self, "重命名", "请输入新名称:", text=app.get("name", "")
+        )
+        if ok and new_name.strip():
+            updated_app = app.copy()
+            updated_app["name"] = new_name.strip()
+            self.application_manager.update_app(app.get("id"), updated_app)
+            self._load_apps()
+
     def _delete_app(self, app: dict):
         """Delete application"""
         reply = QMessageBox.question(
@@ -916,7 +930,126 @@ class MainPanel(QWidget):
         scroll_area.setStyleSheet("QScrollArea { border: none; background: #ffffff; }")
         
         tab_widget.addTab(scroll_area, "插件管理")
-        
+
+        # ── Appearance tab ────────────────────────────────────────────────────
+        appearance_widget = QWidget()
+        appearance_layout = QVBoxLayout(appearance_widget)
+        appearance_layout.setSpacing(20)
+        appearance_layout.setContentsMargins(24, 24, 24, 24)
+
+        # -- Background type ---
+        bg_type_label = QLabel("背景类型")
+        bg_type_label.setStyleSheet("font-size: 13px; font-weight: 600; color: #1e293b;")
+        appearance_layout.addWidget(bg_type_label)
+
+        bg_type_combo = QComboBox()
+        bg_type_combo.addItem("渐变色", "gradient")
+        bg_type_combo.addItem("纯色", "solid")
+        bg_type_combo.addItem("图片", "image")
+        current_bg_type = self.config_manager.get("appearance.background_type", "gradient")
+        for idx in range(bg_type_combo.count()):
+            if bg_type_combo.itemData(idx) == current_bg_type:
+                bg_type_combo.setCurrentIndex(idx)
+                break
+        bg_type_combo.setStyleSheet("""
+            QComboBox {
+                padding: 8px 12px; font-size: 13px; border: 2px solid #e2e8f0;
+                border-radius: 8px; background: #f8fafc; color: #1e293b;
+            }
+            QComboBox::drop-down { border: none; }
+        """)
+        appearance_layout.addWidget(bg_type_combo)
+
+        # -- Gradient colors --
+        gradient_widget = QWidget()
+        gradient_layout = QFormLayout(gradient_widget)
+        gradient_layout.setSpacing(12)
+        gradient_layout.setContentsMargins(0, 0, 0, 0)
+
+        def _make_color_btn(config_key: str, default: str) -> QPushButton:
+            color = self.config_manager.get(config_key, default)
+            btn = QPushButton()
+            btn.setFixedSize(100, 32)
+            btn.setStyleSheet(f"background: {color}; border: 2px solid #e2e8f0; border-radius: 6px;")
+            btn.setProperty("color_value", color)
+
+            def pick(b=btn, key=config_key):
+                current = QColor(b.property("color_value"))
+                chosen = QColorDialog.getColor(current, dialog, "选择颜色")
+                if chosen.isValid():
+                    hex_color = chosen.name()
+                    b.setProperty("color_value", hex_color)
+                    b.setStyleSheet(f"background: {hex_color}; border: 2px solid #e2e8f0; border-radius: 6px;")
+
+            btn.clicked.connect(pick)
+            return btn
+
+        grad_start_btn = _make_color_btn("appearance.background_gradient_start", "#f8fafc")
+        grad_end_btn = _make_color_btn("appearance.background_gradient_end", "#f1f5f9")
+        gradient_layout.addRow("渐变起始色:", grad_start_btn)
+        gradient_layout.addRow("渐变结束色:", grad_end_btn)
+        appearance_layout.addWidget(gradient_widget)
+
+        # -- Solid color --
+        solid_widget = QWidget()
+        solid_layout = QFormLayout(solid_widget)
+        solid_layout.setSpacing(12)
+        solid_layout.setContentsMargins(0, 0, 0, 0)
+        solid_color_btn = _make_color_btn("appearance.background_color", "#f8fafc")
+        solid_layout.addRow("背景颜色:", solid_color_btn)
+        appearance_layout.addWidget(solid_widget)
+
+        # -- Image picker --
+        image_widget = QWidget()
+        image_layout = QHBoxLayout(image_widget)
+        image_layout.setContentsMargins(0, 0, 0, 0)
+        image_layout.setSpacing(8)
+        image_path_input = QLineEdit()
+        image_path_input.setText(self.config_manager.get("appearance.background_image", ""))
+        image_path_input.setReadOnly(True)
+        image_path_input.setPlaceholderText("选择图片文件...")
+        image_path_input.setStyleSheet("padding: 8px 12px; font-size: 13px; border: 2px solid #e2e8f0; border-radius: 8px;")
+        browse_btn = QPushButton("浏览")
+        browse_btn.setFixedSize(70, 36)
+        browse_btn.setStyleSheet(
+            "QPushButton { background: #f1f5f9; color: #475569; border: none; border-radius: 8px; font-size: 13px; }"
+            "QPushButton:hover { background: #e2e8f0; }"
+        )
+
+        def pick_image():
+            path, _ = QFileDialog.getOpenFileName(
+                dialog, "选择背景图片", "",
+                "Images (*.png *.jpg *.jpeg *.bmp *.gif *.webp);;All Files (*)"
+            )
+            if path:
+                image_path_input.setText(path)
+
+        browse_btn.clicked.connect(pick_image)
+        image_layout.addWidget(image_path_input)
+        image_layout.addWidget(browse_btn)
+        appearance_layout.addWidget(image_widget)
+
+        # -- Accent color --
+        accent_label = QLabel("主题强调色")
+        accent_label.setStyleSheet("font-size: 13px; font-weight: 600; color: #1e293b; margin-top: 8px;")
+        appearance_layout.addWidget(accent_label)
+        accent_color_btn = _make_color_btn("appearance.accent_color", "#3b82f6")
+        appearance_layout.addWidget(accent_color_btn)
+
+        # Show/hide sub-sections based on bg_type_combo selection
+        def _update_appearance_sections(index=None):
+            selected = bg_type_combo.currentData()
+            gradient_widget.setVisible(selected == "gradient")
+            solid_widget.setVisible(selected == "solid")
+            image_widget.setVisible(selected == "image")
+
+        bg_type_combo.currentIndexChanged.connect(_update_appearance_sections)
+        _update_appearance_sections()
+
+        appearance_layout.addStretch()
+        tab_widget.addTab(appearance_widget, "外观")
+        # ── end Appearance tab ───────────────────────────────────────────────
+
         main_layout.addWidget(tab_widget)
         
         button_container = QWidget()
@@ -971,6 +1104,15 @@ class MainPanel(QWidget):
                 self.config_manager.set("window.follow_mouse", follow_mouse_checkbox.isChecked())
                 self.config_manager.set("window.hide_on_focus_loss", hide_on_focus_loss_checkbox.isChecked())
                 self.config_manager.set("search.max_results", max_results_spinbox.value())
+
+                # Save appearance settings
+                self.config_manager.set("appearance.background_type", bg_type_combo.currentData())
+                self.config_manager.set("appearance.background_gradient_start", grad_start_btn.property("color_value"))
+                self.config_manager.set("appearance.background_gradient_end", grad_end_btn.property("color_value"))
+                self.config_manager.set("appearance.background_color", solid_color_btn.property("color_value"))
+                self.config_manager.set("appearance.background_image", image_path_input.text())
+                self.config_manager.set("appearance.accent_color", accent_color_btn.property("color_value"))
+                self.update()  # Repaint main panel with new background
                 
                 for plugin_name, widgets in plugin_settings_widgets.items():
                     if plugin_name in self.plugin_system.plugins:
@@ -1072,19 +1214,50 @@ class MainPanel(QWidget):
         super().closeEvent(event)
 
     def paintEvent(self, event):
-        """Paint the gradient background"""
+        """Paint the background using configured appearance settings"""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        
+
+        bg_type = self.config_manager.get("appearance.background_type", "gradient")
+
+        if bg_type == "solid":
+            color = QColor(self.config_manager.get("appearance.background_color", "#f8fafc"))
+            painter.setBrush(QBrush(color))
+            painter.setPen(QPen(QColor("#e2e8f0"), 1))
+            painter.drawRect(self.rect())
+        elif bg_type == "image":
+            image_path = self.config_manager.get("appearance.background_image", "")
+            painted = False
+            if image_path and os.path.exists(image_path):
+                pixmap = QPixmap(image_path)
+                if not pixmap.isNull():
+                    scaled = pixmap.scaled(
+                        self.size(),
+                        Qt.KeepAspectRatioByExpanding,
+                        Qt.SmoothTransformation,
+                    )
+                    painter.drawPixmap(0, 0, scaled)
+                    painter.setPen(QPen(QColor("#e2e8f0"), 1))
+                    painter.drawRect(self.rect())
+                    painted = True
+            if not painted:
+                # Fall back to gradient if image is unavailable
+                self._paint_gradient(painter)
+        else:
+            self._paint_gradient(painter)
+
+        super().paintEvent(event)
+
+    def _paint_gradient(self, painter):
+        """Paint a vertical linear gradient background using the configured start and end colors."""
+        start = self.config_manager.get("appearance.background_gradient_start", "#f8fafc")
+        end = self.config_manager.get("appearance.background_gradient_end", "#f1f5f9")
         gradient = QLinearGradient(0, 0, 0, self.height())
-        gradient.setColorAt(0, QColor("#f8fafc"))
-        gradient.setColorAt(1, QColor("#f1f5f9"))
-        
+        gradient.setColorAt(0, QColor(start))
+        gradient.setColorAt(1, QColor(end))
         painter.setBrush(QBrush(gradient))
         painter.setPen(QPen(QColor("#e2e8f0"), 1))
         painter.drawRect(self.rect())
-        
-        super().paintEvent(event)
 
     def focusOutEvent(self, event):
         """Hide the panel when focus is lost by clicking outside."""
