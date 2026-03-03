@@ -79,11 +79,7 @@ def extract_icon_from_file(file_path: str, size: int = 48) -> QIcon:
 class ModernStyle:
     MODERN_STYLE = """
     QWidget#mainPanel {
-        background: qlineargradient(
-            x1: 0, y1: 0, x2: 0, y2: 1,
-            stop: 0 #f8fafc,
-            stop: 1 #f1f5f9
-        );
+        background: #f8fafc;
         border-radius: 16px;
         border: 1px solid #e2e8f0;
     }
@@ -942,110 +938,18 @@ class MainPanel(QWidget):
         # ── Appearance tab ────────────────────────────────────────────────────
         appearance_widget = QWidget()
         appearance_layout = QVBoxLayout(appearance_widget)
-        appearance_layout.setSpacing(16)
+        appearance_layout.setSpacing(20)
         appearance_layout.setContentsMargins(24, 24, 24, 24)
 
-        color_buttons = {}
-
-        def _create_color_picker(initial_color: str, parent_dialog: QDialog) -> QPushButton:
-            btn = QPushButton()
-            btn.setFixedSize(80, 32)
-            btn.setCursor(Qt.PointingHandCursor)
-            btn.setStyleSheet(f"background: {initial_color}; border: 2px solid #e2e8f0; border-radius: 6px;")
-            btn.setProperty("color_value", initial_color)
-
-            def on_click():
-                current = QColor(btn.property("color_value") or initial_color)
-                chosen = QColorDialog.getColor(current, parent_dialog, "选择颜色", QColorDialog.ShowAlphaChannel)
-                if chosen.isValid():
-                    hex_color = chosen.name(QColor.HexRgb)
-                    btn.setProperty("color_value", hex_color)
-                    btn.setStyleSheet(f"background: {hex_color}; border: 2px solid #e2e8f0; border-radius: 6px;")
-
-            btn.clicked.connect(on_click)
-            return btn
-
-        # === 预设主题 ===
-        preset_group = QWidget()
-        preset_group.setStyleSheet("background: #f8fafc; border-radius: 12px; border: 1px solid #e2e8f0;")
-        preset_layout = QVBoxLayout(preset_group)
-        preset_layout.setSpacing(12)
-        preset_layout.setContentsMargins(16, 16, 16, 16)
-
-        preset_title = QLabel("预设主题")
-        preset_title.setStyleSheet("font-size: 14px; font-weight: 600; color: #1e293b; background: transparent;")
-        preset_layout.addWidget(preset_title)
-
-        preset_btn_layout = QHBoxLayout()
-        preset_btn_layout.setSpacing(8)
-
-        presets = [
-            ("默认蓝", "#3b82f6", "#f8fafc", "#f1f5f9"),
-            ("深邃紫", "#8b5cf6", "#1e1b4b", "#312e81"),
-            ("森林绿", "#10b981", "#ecfdf5", "#d1fae5"),
-            ("暖阳橙", "#f59e0b", "#fffbeb", "#fef3c7"),
-            ("玫瑰红", "#f43f5e", "#fff1f2", "#ffe4e6"),
-            ("暗夜黑", "#64748b", "#0f172a", "#1e293b"),
-        ]
-
-        def apply_preset(name, accent, start, end):
-            if "accent_btn" in color_buttons:
-                color_buttons["accent_btn"].setProperty("color_value", accent)
-                color_buttons["accent_btn"].setStyleSheet(f"background: {accent}; border: 2px solid #e2e8f0; border-radius: 6px;")
-            if "grad_start_btn" in color_buttons:
-                color_buttons["grad_start_btn"].setProperty("color_value", start)
-                color_buttons["grad_start_btn"].setStyleSheet(f"background: {start}; border: 2px solid #e2e8f0; border-radius: 6px;")
-            if "grad_end_btn" in color_buttons:
-                color_buttons["grad_end_btn"].setProperty("color_value", end)
-                color_buttons["grad_end_btn"].setStyleSheet(f"background: {end}; border: 2px solid #e2e8f0; border-radius: 6px;")
-
-        for preset_name, accent, start, end in presets:
-            btn = QPushButton(preset_name)
-            btn.setFixedHeight(32)
-            btn.setCursor(Qt.PointingHandCursor)
-            btn.setStyleSheet(f"""
-                QPushButton {{
-                    background: qlineargradient(x1:0 y1:0, x2:1 y2:1, stop:0 {start}, stop:1 {end});
-                    color: {accent};
-                    border: 2px solid {accent};
-                    border-radius: 6px;
-                    font-size: 12px;
-                    font-weight: 500;
-                    padding: 0 12px;
-                }}
-                QPushButton:hover {{
-                    background: {accent};
-                    color: white;
-                }}
-            """)
-            btn.clicked.connect(lambda checked, n=preset_name, a=accent, s=start, e=end: apply_preset(n, a, s, e))
-            preset_btn_layout.addWidget(btn)
-
-        preset_layout.addLayout(preset_btn_layout)
-        appearance_layout.addWidget(preset_group)
-
-        # === 背景设置 ===
-        bg_group = QWidget()
-        bg_group.setStyleSheet("background: #f8fafc; border-radius: 12px; border: 1px solid #e2e8f0;")
-        bg_group_layout = QVBoxLayout(bg_group)
-        bg_group_layout.setSpacing(16)
-        bg_group_layout.setContentsMargins(16, 16, 16, 16)
-
-        bg_title = QLabel("背景设置")
-        bg_title.setStyleSheet("font-size: 14px; font-weight: 600; color: #1e293b; background: transparent;")
-        bg_group_layout.addWidget(bg_title)
-
-        bg_type_layout = QHBoxLayout()
-        bg_type_layout.setSpacing(12)
+        # -- Background type ---
         bg_type_label = QLabel("背景类型")
-        bg_type_label.setStyleSheet("font-size: 13px; color: #475569; background: transparent; min-width: 70px;")
-        bg_type_layout.addWidget(bg_type_label)
+        bg_type_label.setStyleSheet("font-size: 13px; font-weight: 600; color: #1e293b;")
+        appearance_layout.addWidget(bg_type_label)
 
         bg_type_combo = QComboBox()
-        bg_type_combo.addItem("渐变色", "gradient")
         bg_type_combo.addItem("纯色", "solid")
         bg_type_combo.addItem("图片", "image")
-        current_bg_type = self.config_manager.get("appearance.background_type", "gradient")
+        current_bg_type = self.config_manager.get("appearance.background_type", "solid")
         for idx in range(bg_type_combo.count()):
             if bg_type_combo.itemData(idx) == current_bg_type:
                 bg_type_combo.setCurrentIndex(idx)
@@ -1053,121 +957,54 @@ class MainPanel(QWidget):
         bg_type_combo.setStyleSheet("""
             QComboBox {
                 padding: 8px 12px; font-size: 13px; border: 2px solid #e2e8f0;
-                border-radius: 8px; background: #ffffff; color: #1e293b; min-width: 120px;
+                border-radius: 8px; background: #f8fafc; color: #1e293b;
             }
-            QComboBox:hover { border-color: #3b82f6; }
-            QComboBox::drop-down { border: none; width: 20px; }
-            QComboBox::down-arrow { image: none; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 6px solid #64748b; margin-right: 8px; }
-        """)
-        bg_type_layout.addWidget(bg_type_combo)
-        bg_type_layout.addStretch()
-        bg_group_layout.addLayout(bg_type_layout)
-
-        gradient_widget = QWidget()
-        gradient_widget.setStyleSheet("background: transparent;")
-        gradient_layout = QVBoxLayout(gradient_widget)
-        gradient_layout.setSpacing(12)
-        gradient_layout.setContentsMargins(0, 0, 0, 0)
-
-        grad_start_color = self.config_manager.get("appearance.background_gradient_start", "#f8fafc")
-        grad_end_color = self.config_manager.get("appearance.background_gradient_end", "#f1f5f9")
-
-        grad_start_row = QHBoxLayout()
-        grad_start_row.setSpacing(12)
-        grad_start_label = QLabel("渐变起始色")
-        grad_start_label.setStyleSheet("font-size: 13px; color: #475569; background: transparent; min-width: 70px;")
-        grad_start_row.addWidget(grad_start_label)
-        grad_start_btn = _create_color_picker(grad_start_color, dialog)
-        color_buttons["grad_start_btn"] = grad_start_btn
-        grad_start_row.addWidget(grad_start_btn)
-
-        grad_start_hex = QLabel(grad_start_color)
-        grad_start_hex.setStyleSheet("font-size: 12px; color: #94a3b8; background: transparent; font-family: monospace;")
-        grad_start_btn.clicked.connect(lambda: grad_start_hex.setText(grad_start_btn.property("color_value") or grad_start_color))
-        grad_start_row.addWidget(grad_start_hex)
-        grad_start_row.addStretch()
-        gradient_layout.addLayout(grad_start_row)
-
-        grad_end_row = QHBoxLayout()
-        grad_end_row.setSpacing(12)
-        grad_end_label = QLabel("渐变结束色")
-        grad_end_label.setStyleSheet("font-size: 13px; color: #475569; background: transparent; min-width: 70px;")
-        grad_end_row.addWidget(grad_end_label)
-        grad_end_btn = _create_color_picker(grad_end_color, dialog)
-        color_buttons["grad_end_btn"] = grad_end_btn
-        grad_end_row.addWidget(grad_end_btn)
-
-        grad_end_hex = QLabel(grad_end_color)
-        grad_end_hex.setStyleSheet("font-size: 12px; color: #94a3b8; background: transparent; font-family: monospace;")
-        grad_end_btn.clicked.connect(lambda: grad_end_hex.setText(grad_end_btn.property("color_value") or grad_end_color))
-        grad_end_row.addWidget(grad_end_hex)
-        grad_end_row.addStretch()
-        gradient_layout.addLayout(grad_end_row)
-
-        grad_dir_row = QHBoxLayout()
-        grad_dir_row.setSpacing(12)
-        grad_dir_label = QLabel("渐变方向")
-        grad_dir_label.setStyleSheet("font-size: 13px; color: #475569; background: transparent; min-width: 70px;")
-        grad_dir_row.addWidget(grad_dir_label)
-        grad_dir_combo = QComboBox()
-        grad_dir_combo.addItem("从上到下", "vertical")
-        grad_dir_combo.addItem("从左到右", "horizontal")
-        grad_dir_combo.addItem("对角线", "diagonal")
-        grad_dir_combo.addItem("径向渐变", "radial")
-        current_dir = self.config_manager.get("appearance.gradient_direction", "vertical")
-        for idx in range(grad_dir_combo.count()):
-            if grad_dir_combo.itemData(idx) == current_dir:
-                grad_dir_combo.setCurrentIndex(idx)
-                break
-        grad_dir_combo.setStyleSheet("""
-            QComboBox {
-                padding: 8px 12px; font-size: 13px; border: 2px solid #e2e8f0;
-                border-radius: 8px; background: #ffffff; color: #1e293b; min-width: 120px;
-            }
-            QComboBox:hover { border-color: #3b82f6; }
             QComboBox::drop-down { border: none; }
         """)
-        grad_dir_row.addWidget(grad_dir_combo)
-        grad_dir_row.addStretch()
-        gradient_layout.addLayout(grad_dir_row)
+        appearance_layout.addWidget(bg_type_combo)
 
-        bg_group_layout.addWidget(gradient_widget)
+        def _make_color_btn(config_key: str, default: str) -> QPushButton:
+            color = self.config_manager.get(config_key, default)
+            btn = QPushButton()
+            btn.setFixedSize(100, 32)
+            btn.setStyleSheet(f"background: {color}; border: 2px solid #e2e8f0; border-radius: 6px;")
+            btn.setProperty("color_value", color)
 
+            def pick(b=btn, key=config_key):
+                current = QColor(b.property("color_value"))
+                chosen = QColorDialog.getColor(current, dialog, "选择颜色")
+                if chosen.isValid():
+                    hex_color = chosen.name()
+                    b.setProperty("color_value", hex_color)
+                    b.setStyleSheet(f"background: {hex_color}; border: 2px solid #e2e8f0; border-radius: 6px;")
+
+            btn.clicked.connect(pick)
+            return btn
+
+        # -- Solid color --
         solid_widget = QWidget()
-        solid_widget.setStyleSheet("background: transparent;")
-        solid_layout = QHBoxLayout(solid_widget)
+        solid_layout = QFormLayout(solid_widget)
         solid_layout.setSpacing(12)
         solid_layout.setContentsMargins(0, 0, 0, 0)
-        solid_label = QLabel("背景颜色")
-        solid_label.setStyleSheet("font-size: 13px; color: #475569; background: transparent; min-width: 70px;")
-        solid_layout.addWidget(solid_label)
-        solid_color = self.config_manager.get("appearance.background_color", "#f8fafc")
-        solid_color_btn = _create_color_picker(solid_color, dialog)
-        color_buttons["solid_color_btn"] = solid_color_btn
-        solid_layout.addWidget(solid_color_btn)
-        solid_layout.addStretch()
-        bg_group_layout.addWidget(solid_widget)
+        solid_color_btn = _make_color_btn("appearance.background_color", "#f8fafc")
+        solid_layout.addRow("背景颜色:", solid_color_btn)
+        appearance_layout.addWidget(solid_widget)
 
+        # -- Image picker --
         image_widget = QWidget()
-        image_widget.setStyleSheet("background: transparent;")
         image_layout = QHBoxLayout(image_widget)
         image_layout.setContentsMargins(0, 0, 0, 0)
-        image_layout.setSpacing(12)
-        image_label = QLabel("背景图片")
-        image_label.setStyleSheet("font-size: 13px; color: #475569; background: transparent; min-width: 70px;")
-        image_layout.addWidget(image_label)
+        image_layout.setSpacing(8)
         image_path_input = QLineEdit()
         image_path_input.setText(self.config_manager.get("appearance.background_image", ""))
         image_path_input.setReadOnly(True)
         image_path_input.setPlaceholderText("选择图片文件...")
-        image_path_input.setStyleSheet("padding: 8px 12px; font-size: 13px; border: 2px solid #e2e8f0; border-radius: 8px; background: #ffffff;")
-        image_layout.addWidget(image_path_input, 1)
+        image_path_input.setStyleSheet("padding: 8px 12px; font-size: 13px; border: 2px solid #e2e8f0; border-radius: 8px;")
         browse_btn = QPushButton("浏览")
         browse_btn.setFixedSize(70, 36)
-        browse_btn.setCursor(Qt.PointingHandCursor)
         browse_btn.setStyleSheet(
-            "QPushButton { background: #3b82f6; color: white; border: none; border-radius: 8px; font-size: 13px; font-weight: 500; }"
-            "QPushButton:hover { background: #2563eb; }"
+            "QPushButton { background: #f1f5f9; color: #475569; border: none; border-radius: 8px; font-size: 13px; }"
+            "QPushButton:hover { background: #e2e8f0; }"
         )
 
         def pick_image():
@@ -1179,88 +1016,26 @@ class MainPanel(QWidget):
                 image_path_input.setText(path)
 
         browse_btn.clicked.connect(pick_image)
+        image_layout.addWidget(image_path_input)
         image_layout.addWidget(browse_btn)
-        bg_group_layout.addWidget(image_widget)
+        appearance_layout.addWidget(image_widget)
 
+        # -- Accent color --
+        accent_label = QLabel("主题强调色")
+        accent_label.setStyleSheet("font-size: 13px; font-weight: 600; color: #1e293b; margin-top: 8px;")
+        appearance_layout.addWidget(accent_label)
+        accent_color_btn = _make_color_btn("appearance.accent_color", "#3b82f6")
+        appearance_layout.addWidget(accent_color_btn)
+
+        # Show/hide sub-sections based on bg_type_combo selection
         def _update_appearance_sections(index=None):
             selected = bg_type_combo.currentData()
-            gradient_widget.setVisible(selected == "gradient")
             solid_widget.setVisible(selected == "solid")
             image_widget.setVisible(selected == "image")
 
         bg_type_combo.currentIndexChanged.connect(_update_appearance_sections)
         _update_appearance_sections()
 
-        appearance_layout.addWidget(bg_group)
-
-        # === 窗口样式 ===
-        style_group = QWidget()
-        style_group.setStyleSheet("background: #f8fafc; border-radius: 12px; border: 1px solid #e2e8f0;")
-        style_group_layout = QVBoxLayout(style_group)
-        style_group_layout.setSpacing(16)
-        style_group_layout.setContentsMargins(16, 16, 16, 16)
-
-        style_title = QLabel("窗口样式")
-        style_title.setStyleSheet("font-size: 14px; font-weight: 600; color: #1e293b; background: transparent;")
-        style_group_layout.addWidget(style_title)
-
-        corner_row = QHBoxLayout()
-        corner_row.setSpacing(12)
-        corner_label = QLabel("圆角大小")
-        corner_label.setStyleSheet("font-size: 13px; color: #475569; background: transparent; min-width: 70px;")
-        corner_row.addWidget(corner_label)
-        corner_spinbox = QSpinBox()
-        corner_spinbox.setRange(0, 32)
-        corner_spinbox.setValue(self.config_manager.get("appearance.border_radius", 16))
-        corner_spinbox.setStyleSheet("padding: 6px 10px; font-size: 13px; border: 2px solid #e2e8f0; border-radius: 8px; background: #ffffff;")
-        corner_row.addWidget(corner_spinbox)
-        corner_row.addStretch()
-        style_group_layout.addLayout(corner_row)
-
-        opacity_row = QHBoxLayout()
-        opacity_row.setSpacing(12)
-        opacity_label = QLabel("窗口透明度")
-        opacity_label.setStyleSheet("font-size: 13px; color: #475569; background: transparent; min-width: 70px;")
-        opacity_row.addWidget(opacity_label)
-        opacity_spinbox = QSpinBox()
-        opacity_spinbox.setRange(50, 100)
-        opacity_spinbox.setValue(int(self.config_manager.get("window.opacity", 95)))
-        opacity_spinbox.setSuffix("%")
-        opacity_spinbox.setStyleSheet("padding: 6px 10px; font-size: 13px; border: 2px solid #e2e8f0; border-radius: 8px; background: #ffffff;")
-        opacity_row.addWidget(opacity_spinbox)
-        opacity_row.addStretch()
-        style_group_layout.addLayout(opacity_row)
-
-        accent_row = QHBoxLayout()
-        accent_row.setSpacing(12)
-        accent_label = QLabel("主题强调色")
-        accent_label.setStyleSheet("font-size: 13px; color: #475569; background: transparent; min-width: 70px;")
-        accent_row.addWidget(accent_label)
-        accent_color = self.config_manager.get("appearance.accent_color", "#3b82f6")
-        accent_color_btn = _create_color_picker(accent_color, dialog)
-        color_buttons["accent_btn"] = accent_color_btn
-        accent_row.addWidget(accent_color_btn)
-
-        accent_hex = QLabel(accent_color)
-        accent_hex.setStyleSheet("font-size: 12px; color: #94a3b8; background: transparent; font-family: monospace;")
-        accent_color_btn.clicked.connect(lambda: accent_hex.setText(accent_color_btn.property("color_value") or accent_color))
-        accent_row.addWidget(accent_hex)
-        accent_row.addStretch()
-        style_group_layout.addLayout(accent_row)
-
-        shadow_row = QHBoxLayout()
-        shadow_row.setSpacing(12)
-        shadow_label = QLabel("阴影效果")
-        shadow_label.setStyleSheet("font-size: 13px; color: #475569; background: transparent; min-width: 70px;")
-        shadow_row.addWidget(shadow_label)
-        shadow_checkbox = QCheckBox()
-        shadow_checkbox.setChecked(self.config_manager.get("appearance.enable_shadow", True))
-        shadow_checkbox.setStyleSheet("background: transparent;")
-        shadow_row.addWidget(shadow_checkbox)
-        shadow_row.addStretch()
-        style_group_layout.addLayout(shadow_row)
-
-        appearance_layout.addWidget(style_group)
         appearance_layout.addStretch()
         tab_widget.addTab(appearance_widget, "外观")
         # ── end Appearance tab ───────────────────────────────────────────────
@@ -1322,16 +1097,10 @@ class MainPanel(QWidget):
 
                 # Save appearance settings
                 self.config_manager.set("appearance.background_type", bg_type_combo.currentData())
-                self.config_manager.set("appearance.background_gradient_start", grad_start_btn.property("color_value"))
-                self.config_manager.set("appearance.background_gradient_end", grad_end_btn.property("color_value"))
                 self.config_manager.set("appearance.background_color", solid_color_btn.property("color_value"))
                 self.config_manager.set("appearance.background_image", image_path_input.text())
                 self.config_manager.set("appearance.accent_color", accent_color_btn.property("color_value"))
-                self.config_manager.set("appearance.gradient_direction", grad_dir_combo.currentData())
-                self.config_manager.set("appearance.border_radius", corner_spinbox.value())
-                self.config_manager.set("window.opacity", opacity_spinbox.value() / 100.0)
-                self.config_manager.set("appearance.enable_shadow", shadow_checkbox.isChecked())
-                self.update()
+                self.update()  # Repaint main panel with new background
                 
                 # Save plugin enable/disable state
                 new_enabled = []
@@ -1455,23 +1224,15 @@ class MainPanel(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
 
-        border_radius = self.config_manager.get("appearance.border_radius", 16)
-        enable_shadow = self.config_manager.get("appearance.enable_shadow", True)
-        bg_type = self.config_manager.get("appearance.background_type", "gradient")
-
-        if enable_shadow:
-            painter.setPen(Qt.NoPen)
-            painter.setBrush(QColor(0, 0, 0, 15))
-            painter.drawRoundedRect(3, 3, self.width() - 6, self.height() - 6, border_radius, border_radius)
+        bg_type = self.config_manager.get("appearance.background_type", "solid")
 
         if bg_type == "solid":
             color = QColor(self.config_manager.get("appearance.background_color", "#f8fafc"))
             painter.setBrush(QBrush(color))
             painter.setPen(QPen(QColor("#e2e8f0"), 1))
-            painter.drawRoundedRect(self.rect(), border_radius, border_radius)
+            painter.drawRect(self.rect())
         elif bg_type == "image":
             image_path = self.config_manager.get("appearance.background_image", "")
-            painted = False
             if image_path and os.path.exists(image_path):
                 pixmap = QPixmap(image_path)
                 if not pixmap.isNull():
@@ -1480,40 +1241,22 @@ class MainPanel(QWidget):
                         Qt.KeepAspectRatioByExpanding,
                         Qt.SmoothTransformation,
                     )
-                    painter.drawRoundedRect(self.rect(), border_radius, border_radius)
-                    painter.setClipRect(self.rect())
                     painter.drawPixmap(0, 0, scaled)
                     painter.setPen(QPen(QColor("#e2e8f0"), 1))
-                    painter.setBrush(Qt.NoBrush)
-                    painter.drawRoundedRect(self.rect(), border_radius, border_radius)
-                    painted = True
-            if not painted:
-                self._paint_gradient(painter, border_radius)
-        else:
-            self._paint_gradient(painter, border_radius)
+                    painter.drawRect(self.rect())
+                else:
+                    self._paint_solid_fallback(painter)
+            else:
+                self._paint_solid_fallback(painter)
 
         super().paintEvent(event)
 
-    def _paint_gradient(self, painter, border_radius=16):
-        """Paint a gradient background with configurable direction."""
-        start = self.config_manager.get("appearance.background_gradient_start", "#f8fafc")
-        end = self.config_manager.get("appearance.background_gradient_end", "#f1f5f9")
-        direction = self.config_manager.get("appearance.gradient_direction", "vertical")
-
-        if direction == "vertical":
-            gradient = QLinearGradient(0, 0, 0, self.height())
-        elif direction == "horizontal":
-            gradient = QLinearGradient(0, 0, self.width(), 0)
-        elif direction == "diagonal":
-            gradient = QLinearGradient(0, 0, self.width(), self.height())
-        else:
-            gradient = QLinearGradient(0, 0, 0, self.height())
-
-        gradient.setColorAt(0, QColor(start))
-        gradient.setColorAt(1, QColor(end))
-        painter.setBrush(QBrush(gradient))
+    def _paint_solid_fallback(self, painter):
+        """Paint a solid background as fallback."""
+        color = QColor(self.config_manager.get("appearance.background_color", "#f8fafc"))
+        painter.setBrush(QBrush(color))
         painter.setPen(QPen(QColor("#e2e8f0"), 1))
-        painter.drawRoundedRect(self.rect(), border_radius, border_radius)
+        painter.drawRect(self.rect())
 
     def focusOutEvent(self, event):
         """Hide the panel when focus is lost by clicking outside."""
