@@ -970,7 +970,7 @@ class MainPanel(QWidget):
             btn.setStyleSheet(f"background: {color}; border: 2px solid #e2e8f0; border-radius: 6px;")
             btn.setProperty("color_value", color)
 
-            def pick(b=btn, key=config_key):
+            def pick(checked=False, b=btn, key=config_key):
                 current = QColor(b.property("color_value"))
                 chosen = QColorDialog.getColor(current, dialog, "选择颜色")
                 if chosen.isValid():
