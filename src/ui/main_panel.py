@@ -79,7 +79,6 @@ def extract_icon_from_file(file_path: str, size: int = 48) -> QIcon:
 class ModernStyle:
     MODERN_STYLE = """
     QWidget#mainPanel {
-        background: #f8fafc;
         border-radius: 16px;
         border: 1px solid #e2e8f0;
     }
@@ -332,7 +331,7 @@ class MainPanel(QWidget):
     def _setup_ui(self):
         """Setup the user interface"""
         self.setObjectName("mainPanel")
-        self.setAutoFillBackground(True)
+        self.setAttribute(Qt.WA_StyledBackground, True)
         
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 16)
