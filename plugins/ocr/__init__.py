@@ -281,18 +281,19 @@ class TencentOcrPlugin(PluginBase):
         self._result_dialog = None
         self._temp_image_path = None
     
-    def get_name(self) -> str:
-        return "TencentOcr"
-    
-    def get_icon(self) -> str:
-        return "scan"
-    
-    def get_info(self) -> dict:
+    def get_metadata(self) -> dict:
         return {
+            "plugin_id": "ocr",
             "name": "OCR 识别",
+            "icon": "scan",
             "version": "1.0.0",
             "author": "Larj Team",
-            "description": "屏幕文字识别 - 腾讯云 OCR"
+            "description": "屏幕文字识别 - 腾讯云 OCR",
+            "config_schema": {
+                "secret_id": {"type": "str", "required": True, "desc": "腾讯云 API 密钥 ID"},
+                "secret_key": {"type": "str", "required": True, "secret": True, "desc": "腾讯云 API 密钥 Key"},
+                "region": {"type": "str", "required": True, "default": "ap-beijing", "desc": "API 地域 (如 ap-beijing)"}
+            }
         }
     
     def get_secret_id(self) -> str:
@@ -415,26 +416,7 @@ class TencentOcrPlugin(PluginBase):
         self.logger.info("TencentOcr plugin unloaded")
     
     def get_settings(self) -> dict:
-        return {
-            "secret_id": {
-                "type": "text",
-                "label": "SecretId",
-                "default": self._secret_id,
-                "description": "腾讯云 API 密钥 ID"
-            },
-            "secret_key": {
-                "type": "password",
-                "label": "SecretKey",
-                "default": self._secret_key,
-                "description": "腾讯云 API 密钥 Key"
-            },
-            "region": {
-                "type": "text",
-                "label": "地域",
-                "default": self._region,
-                "description": "API 地域 (如 ap-beijing)"
-            }
-        }
+        return {}
     
     def apply_settings(self, settings: dict):
         if "secret_id" in settings:

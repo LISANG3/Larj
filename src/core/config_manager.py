@@ -70,6 +70,10 @@ class ConfigManager(QObject):
         self.config_dir = Path("config")
         self.config_dir.mkdir(exist_ok=True)
         
+        # Per-plugin config directory
+        self.plugins_config_dir = self.config_dir / "plugins"
+        self.plugins_config_dir.mkdir(exist_ok=True)
+        
         # Config files
         self.settings_file = self.config_dir / "settings.json"
         self.apps_file = self.config_dir / "apps.json"
