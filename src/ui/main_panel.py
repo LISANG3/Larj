@@ -1225,13 +1225,9 @@ class MainPanel(QWidget):
         painter.setRenderHint(QPainter.Antialiasing)
 
         bg_type = self.config_manager.get("appearance.background_type", "solid")
+        bg_color = self.config_manager.get("appearance.background_color", "#f8fafc")
 
-        if bg_type == "solid":
-            color = QColor(self.config_manager.get("appearance.background_color", "#f8fafc"))
-            painter.setBrush(QBrush(color))
-            painter.setPen(QPen(QColor("#e2e8f0"), 1))
-            painter.drawRect(self.rect())
-        elif bg_type == "image":
+        if bg_type == "image":
             image_path = self.config_manager.get("appearance.background_image", "")
             if image_path and os.path.exists(image_path):
                 pixmap = QPixmap(image_path)
@@ -1243,11 +1239,15 @@ class MainPanel(QWidget):
                     )
                     painter.drawPixmap(0, 0, scaled)
                     painter.setPen(QPen(QColor("#e2e8f0"), 1))
+                    painter.setBrush(Qt.NoBrush)
                     painter.drawRect(self.rect())
-                else:
-                    self._paint_solid_fallback(painter)
-            else:
-                self._paint_solid_fallback(painter)
+                    super().paintEvent(event)
+                    return
+
+        color = QColor(bg_color)
+        painter.setBrush(QBrush(color))
+        painter.setPen(QPen(QColor("#e2e8f0"), 1))
+        painter.drawRect(self.rect())
 
         super().paintEvent(event)
 
