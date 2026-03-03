@@ -86,9 +86,9 @@ Larj/
 │   └── Everything.exe    # 主程序 (需下载)
 │
 ├── plugins/              # 插件目录
-│   ├── calculator.py     # 计算器插件
-│   ├── notepad.py        # 记事本插件
-│   └── mtran_server/     # MTranServer 插件（目录化插件）
+│   ├── mtran_server/     # 腾讯翻译插件
+│   │   └── __init__.py
+│   └── ocr/              # OCR 识别插件
 │       └── __init__.py
 │
 ├── src/                  # 源代码
@@ -159,6 +159,50 @@ Larj/
 ```
 
 ## 插件开发
+
+### 内置插件
+
+#### 腾讯翻译插件 (mtran_server)
+
+基于腾讯云机器翻译 API 的多语言翻译插件。
+
+**功能特性：**
+- 支持 15 种语言互译
+- 自动检测源语言
+- 语言交换功能
+- 字符计数器
+
+**配置项：**
+- `secret_id`: 腾讯云 API 密钥 ID
+- `secret_key`: 腾讯云 API 密钥 Key
+- `region`: API 地域
+
+**使用方法：**
+1. 在 [腾讯云控制台](https://console.cloud.tencent.com/cam/capi) 获取 API 密钥
+2. 在设置 → 插件管理中配置密钥
+3. 点击翻译图标打开翻译对话框
+
+#### OCR 识别插件
+
+基于腾讯云 OCR API 的屏幕文字识别插件。
+
+**功能特性：**
+- 区域截图识别
+- 高精度识别（99% 准确率）
+- 支持 20+ 种语言
+- 一键复制结果
+
+**配置项：**
+- `secret_id`: 腾讯云 API 密钥 ID
+- `secret_key`: 腾讯云 API 密钥 Key
+- `region`: API 地域
+
+**使用方法：**
+1. 在 [腾讯云控制台](https://console.cloud.tencent.com/cam/capi) 获取 API 密钥
+2. 在设置 → 插件管理中配置密钥
+3. 点击 OCR 图标进入截图模式
+4. 拖拽选择识别区域
+5. 查看识别结果
 
 ### 创建插件
 
@@ -245,7 +289,19 @@ class MyPlugin(PluginBase):
     "sort_by": "usage"
   },
   "plugin": {
-    "enabled_plugins": []
+    "enabled_plugins": ["mtran_server", "ocr"]
+  },
+  "plugins": {
+    "mtran_server": {
+      "secret_id": "your_secret_id",
+      "secret_key": "your_secret_key",
+      "region": "ap-beijing"
+    },
+    "TencentOcr": {
+      "secret_id": "your_secret_id",
+      "secret_key": "your_secret_key",
+      "region": "ap-beijing"
+    }
   }
 }
 ```
