@@ -473,9 +473,10 @@ class MainPanel(QWidget):
             all_items = list(apps)
             
             if self.plugin_system:
-                for plugin_name, plugin in self.plugin_system.plugins.items():
+                for plugin_id, plugin in self.plugin_system.plugins.items():
+                    metadata = plugin.get_metadata()
                     all_items.append({
-                        "name": plugin.get_info().get("name", plugin_name),
+                        "name": metadata.get("name", plugin_id),
                         "type": "plugin",
                         "plugin_instance": plugin
                     })
@@ -499,9 +500,9 @@ class MainPanel(QWidget):
     def _create_plugin_button(self, plugin_item: dict) -> QPushButton:
         """Create a button for a plugin"""
         plugin = plugin_item.get("plugin_instance")
-        plugin_info = plugin.get_info()
+        metadata = plugin.get_metadata()
         
-        button = QPushButton(plugin_info.get("name", "Plugin"))
+        button = QPushButton(metadata.get("name", "Plugin"))
         button.setFixedSize(130, 90)
         button.setStyleSheet(ModernStyle.APP_BUTTON_STYLE)
         button.setCursor(Qt.PointingHandCursor)
@@ -831,12 +832,13 @@ class MainPanel(QWidget):
         plugin_layout.setContentsMargins(24, 24, 24, 24)
         
         plugin_settings_widgets = {}
+        plugin_enable_checkboxes = {}
         
-        if self.plugin_system and self.plugin_system.plugins:
-            for plugin_name, plugin in self.plugin_system.plugins.items():
-                plugin_info = plugin.get_info() if hasattr(plugin, 'get_info') else {}
-                settings = plugin.get_settings() if hasattr(plugin, 'get_settings') else {}
-                
+        discovered = self.plugin_system.get_discovered_plugins() if self.plugin_system else {}
+        enabled_plugins = self.config_manager.get("plugin.enabled_plugins", [])
+        
+        if discovered:
+            for plugin_id, metadata in discovered.items():
                 plugin_group = QWidget()
                 plugin_group.setStyleSheet("""
                     QWidget {
@@ -851,24 +853,34 @@ class MainPanel(QWidget):
                 
                 header_layout = QHBoxLayout()
                 
-                name_label = QLabel(plugin_info.get("name", plugin_name))
+                enable_checkbox = QCheckBox()
+                enable_checkbox.setChecked(plugin_id in enabled_plugins)
+                enable_checkbox.setStyleSheet("background: transparent;")
+                header_layout.addWidget(enable_checkbox)
+                plugin_enable_checkboxes[plugin_id] = enable_checkbox
+                
+                name_label = QLabel(metadata.get("name", plugin_id))
                 name_label.setStyleSheet("font-size: 15px; font-weight: 600; color: #1e293b; background: transparent;")
                 header_layout.addWidget(name_label)
                 
-                version_label = QLabel(f"v{plugin_info.get('version', '1.0')}")
+                version_label = QLabel(f"v{metadata.get('version', '1.0')}")
                 version_label.setStyleSheet("font-size: 12px; color: #94a3b8; background: transparent;")
                 header_layout.addWidget(version_label)
                 header_layout.addStretch()
                 
                 group_layout.addLayout(header_layout)
                 
-                desc_label = QLabel(plugin_info.get("description", ""))
+                desc_label = QLabel(metadata.get("description", ""))
                 desc_label.setStyleSheet("font-size: 12px; color: #64748b; background: transparent;")
                 desc_label.setWordWrap(True)
                 group_layout.addWidget(desc_label)
                 
-                if settings:
-                    plugin_settings_widgets[plugin_name] = {}
+                config_schema = metadata.get("config_schema", {})
+                if config_schema:
+                    plugin_settings_widgets[plugin_id] = {}
+                    
+                    # Load saved config for this plugin
+                    saved_config = self.plugin_system.get_plugin_config(plugin_id) if self.plugin_system else {}
                     
                     settings_form = QWidget()
                     settings_form.setStyleSheet("background: transparent;")
@@ -877,27 +889,23 @@ class MainPanel(QWidget):
                     settings_layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
                     settings_layout.setContentsMargins(0, 8, 0, 0)
                     
-                    for setting_key, setting_config in settings.items():
-                        setting_type = setting_config.get("type", "text")
-                        label = setting_config.get("label", setting_key)
-                        default_value = setting_config.get("default", "")
+                    for setting_key, schema in config_schema.items():
+                        setting_type = schema.get("type", "str")
+                        label = schema.get("desc", setting_key)
+                        default_value = schema.get("default", "")
                         
-                        saved_value = self.config_manager.get(f"plugins.{plugin_name}.{setting_key}", default_value)
+                        saved_value = saved_config.get(setting_key, default_value)
                         
-                        if setting_type == "password":
-                            widget = QLineEdit()
+                        widget = QLineEdit()
+                        # Use password mode for keys/secrets
+                        if "key" in setting_key.lower() and "id" not in setting_key.lower():
                             widget.setEchoMode(QLineEdit.Password)
-                            widget.setText(str(saved_value))
-                            widget.setMinimumWidth(200)
-                            widget.setStyleSheet("background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 10px;")
-                        else:
-                            widget = QLineEdit()
-                            widget.setText(str(saved_value))
-                            widget.setMinimumWidth(200)
-                            widget.setStyleSheet("background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 10px;")
+                        widget.setText(str(saved_value))
+                        widget.setMinimumWidth(200)
+                        widget.setStyleSheet("background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 10px;")
                         
                         settings_layout.addRow(label + ":", widget)
-                        plugin_settings_widgets[plugin_name][setting_key] = widget
+                        plugin_settings_widgets[plugin_id][setting_key] = widget
                     
                     group_layout.addWidget(settings_form)
                 
@@ -972,15 +980,33 @@ class MainPanel(QWidget):
                 self.config_manager.set("window.hide_on_focus_loss", hide_on_focus_loss_checkbox.isChecked())
                 self.config_manager.set("search.max_results", max_results_spinbox.value())
                 
-                for plugin_name, widgets in plugin_settings_widgets.items():
-                    if plugin_name in self.plugin_system.plugins:
-                        plugin = self.plugin_system.plugins[plugin_name]
-                        settings = {}
-                        for setting_key, widget in widgets.items():
-                            value = widget.text()
-                            settings[setting_key] = value
-                            self.config_manager.set(f"plugins.{plugin_name}.{setting_key}", value)
-                        plugin.apply_settings(settings)
+                # Save plugin enable/disable state
+                new_enabled = []
+                for plugin_id, checkbox in plugin_enable_checkboxes.items():
+                    if checkbox.isChecked():
+                        new_enabled.append(plugin_id)
+                        # Enable plugin if not already loaded
+                        if plugin_id not in self.plugin_system.plugins:
+                            self.plugin_system.load_plugin(plugin_id)
+                    else:
+                        # Disable plugin if currently loaded
+                        if plugin_id in self.plugin_system.plugins:
+                            self.plugin_system.unload_plugin(plugin_id)
+                self.config_manager.set("plugin.enabled_plugins", new_enabled)
+                
+                # Save per-plugin config to config/plugins/[plugin_id].json
+                for plugin_id, widgets in plugin_settings_widgets.items():
+                    settings = {}
+                    for setting_key, widget in widgets.items():
+                        value = widget.text()
+                        settings[setting_key] = value
+                    self.plugin_system.set_plugin_config(plugin_id, settings)
+                    # Apply settings to loaded plugin instance
+                    if plugin_id in self.plugin_system.plugins:
+                        self.plugin_system.plugins[plugin_id].apply_settings(settings)
+                
+                # Reload app grid to reflect plugin enable/disable changes
+                self._load_apps()
         finally:
             self._settings_dialog = None
     

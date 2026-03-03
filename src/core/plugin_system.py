@@ -3,269 +3,470 @@
 """
 Plugin System - Extensible plugin architecture
 Manages plugin discovery, loading, and lifecycle
+Plugins are auto-discovered from the plugins/ directory and expose metadata via get_metadata()
 """
 
+import json
 import logging
 import importlib
 import importlib.util
+import os
+import tempfile
 from pathlib import Path
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 from PyQt5.QtCore import QObject, pyqtSignal
 
 
 class PluginBase:
     """
     Base class for all plugins
-    All plugins must inherit from this class and implement required methods
+    All plugins must inherit from this class and implement get_metadata() and handle_click()
     """
-    
-    def get_name(self) -> str:
-        """Get plugin name"""
-        raise NotImplementedError
-    
-    def get_icon(self) -> str:
-        """Get plugin icon path or name"""
-        raise NotImplementedError
-    
-    def get_info(self) -> Dict[str, Any]:
-        """Get plugin information (version, author, description)"""
-        raise NotImplementedError
-    
+
+    def get_metadata(self) -> dict:
+        """
+        Get plugin metadata. Plugins should override this method to provide:
+        - plugin_id: str - Unique identifier (matches filename/directory name)
+        - name: str - Display name
+        - icon: str - Icon identifier
+        - version: str - Version string
+        - author: str - Author name
+        - description: str - Plugin description
+        - config_schema: dict - Configuration schema for auto-generating config forms
+            Each key maps to: {"type": "str", "required": bool, "default": any, "desc": str}
+        """
+        # Default implementation for backward compatibility with old-style plugins
+        info = self.get_info() if hasattr(self, 'get_info') and callable(getattr(self, 'get_info', None)) else {}
+        name = ""
+        try:
+            name = self.get_name()
+        except NotImplementedError:
+            name = info.get("name", self.__class__.__name__)
+        icon = ""
+        try:
+            icon = self.get_icon()
+        except NotImplementedError:
+            icon = ""
+        return {
+            "plugin_id": name.lower().replace(" ", "_") if name else self.__class__.__name__.lower(),
+            "name": info.get("name", name),
+            "icon": icon,
+            "version": info.get("version", "1.0.0"),
+            "author": info.get("author", ""),
+            "description": info.get("description", ""),
+            "config_schema": {}
+        }
+
     def handle_click(self):
         """Handle plugin click event"""
         raise NotImplementedError
-    
-    # Optional methods
+
+    # Optional lifecycle methods
     def on_load(self):
         """Called when plugin is loaded"""
         pass
-    
+
     def on_unload(self):
         """Called when plugin is unloaded"""
         pass
-    
+
+    def apply_settings(self, settings: dict):
+        """Apply configuration settings to the plugin"""
+        pass
+
+    # Legacy methods kept for backward compatibility
+    def get_name(self) -> str:
+        """Get plugin name (legacy, use get_metadata instead)"""
+        return self.get_metadata().get("name", self.__class__.__name__)
+
+    def get_icon(self) -> str:
+        """Get plugin icon (legacy, use get_metadata instead)"""
+        return self.get_metadata().get("icon", "")
+
+    def get_info(self) -> Dict[str, Any]:
+        """Get plugin information (legacy, use get_metadata instead)"""
+        return {}
+
     def get_settings(self) -> Dict[str, Any]:
-        """Get plugin settings UI configuration"""
+        """Get plugin settings (legacy, use config_schema in get_metadata instead)"""
         return {}
 
 
 class PluginSystem(QObject):
     """
-    Plugin system - manages plugin lifecycle
+    Plugin system - manages plugin lifecycle with auto-discovery
+    Plugins are automatically discovered from the plugins/ directory.
+    Plugin metadata and config_schema are read from plugins themselves.
+    Per-plugin configuration is stored in config/plugins/[plugin_id].json
     """
-    
+
     # Signals
-    plugin_loaded = pyqtSignal(str)  # plugin_name
-    plugin_unloaded = pyqtSignal(str)  # plugin_name
-    plugin_error = pyqtSignal(str, str)  # plugin_name, error_message
-    
+    plugin_loaded = pyqtSignal(str)  # plugin_id
+    plugin_unloaded = pyqtSignal(str)  # plugin_id
+    plugin_error = pyqtSignal(str, str)  # plugin_id, error_message
+
     def __init__(self, config_manager):
         super().__init__()
         self.logger = logging.getLogger(__name__)
         self.config_manager = config_manager
-        
+
         # Plugin directory
         self.plugin_dir = Path(self.config_manager.get("plugin.plugin_directory", "plugins"))
         self.plugin_dir.mkdir(exist_ok=True)
-        
-        # Loaded plugins
+
+        # Per-plugin config directory
+        self.plugin_config_dir = Path("config") / "plugins"
+        self.plugin_config_dir.mkdir(parents=True, exist_ok=True)
+
+        # Discovered plugins: {plugin_id: {"metadata": dict, "class": type, "module": module, "file": Path}}
+        self.discovered_plugins: Dict[str, dict] = {}
+
+        # Loaded (active) plugin instances: {plugin_id: PluginBase}
         self.plugins: Dict[str, PluginBase] = {}
-        
+
+        # Migrate old plugin config if needed
+        self._migrate_old_config()
+
         # Discover and load enabled plugins
         self._discover_plugins()
         self._load_enabled_plugins()
-        
+
         self.logger.info("PluginSystem initialized")
-    
+
+    def _migrate_old_config(self):
+        """Migrate old config/plugins.json data to per-plugin config files"""
+        try:
+            old_plugins_file = Path("config") / "plugins.json"
+            if not old_plugins_file.exists():
+                return
+
+            with open(old_plugins_file, 'r', encoding='utf-8') as f:
+                old_data = json.load(f)
+
+            plugins_data = old_data.get("plugins", {})
+            if not plugins_data:
+                return
+
+            for plugin_id, plugin_config in plugins_data.items():
+                if not isinstance(plugin_config, dict):
+                    continue
+                config_file = self.plugin_config_dir / f"{plugin_id}.json"
+                if not config_file.exists():
+                    self._atomic_write_json(config_file, plugin_config)
+                    self.logger.info(f"Migrated config for plugin: {plugin_id}")
+
+            # Clear old plugins node after migration
+            old_data["plugins"] = {}
+            self._atomic_write_json(old_plugins_file, old_data)
+            self.logger.info("Old plugin config migration complete")
+
+        except Exception as e:
+            self.logger.error(f"Failed to migrate old plugin config: {e}", exc_info=True)
+
     def _discover_plugins(self):
-        """Discover available plugins in plugin directory"""
+        """Discover all available plugins in plugin directory and extract metadata"""
         try:
             if not self.plugin_dir.exists():
                 self.logger.warning(f"Plugin directory not found: {self.plugin_dir}")
                 return
-            
-            # Scan for Python files and package directories
-            plugin_files = list(self.plugin_dir.glob("*.py"))
-            plugin_files.extend(
-                p / "__init__.py"
-                for p in self.plugin_dir.iterdir()
-                if p.is_dir() and (p / "__init__.py").exists()
-            )
-            
-            self.logger.info(f"Discovered {len(plugin_files)} potential plugin files")
-            
-            for plugin_file in plugin_files:
-                if plugin_file.name.startswith("_"):
-                    continue  # Skip private files
-                
-                self.logger.debug(f"Found plugin file: {plugin_file.name}")
-            
+
+            # Collect plugin candidates
+            plugin_candidates = []
+
+            # Single-file plugins: plugins/xxx.py (skip __init__.py and private files)
+            for py_file in self.plugin_dir.glob("*.py"):
+                if py_file.name.startswith("_"):
+                    continue
+                plugin_name = py_file.stem
+                plugin_candidates.append((plugin_name, py_file))
+
+            # Directory plugins: plugins/xxx/__init__.py
+            for subdir in self.plugin_dir.iterdir():
+                if not subdir.is_dir() or subdir.name.startswith("_"):
+                    continue
+                init_file = subdir / "__init__.py"
+                if init_file.exists():
+                    plugin_candidates.append((subdir.name, init_file))
+
+            self.logger.info(f"Found {len(plugin_candidates)} potential plugin(s)")
+
+            for plugin_name, plugin_file in plugin_candidates:
+                try:
+                    self._discover_single_plugin(plugin_name, plugin_file)
+                except Exception as e:
+                    self.logger.error(f"Failed to discover plugin '{plugin_name}': {e}", exc_info=True)
+
         except Exception as e:
             self.logger.error(f"Failed to discover plugins: {e}", exc_info=True)
-    
+
+    def _discover_single_plugin(self, plugin_name: str, plugin_file: Path):
+        """Import a single plugin module and extract its metadata"""
+        module_name = f"plugins.{plugin_name}"
+
+        spec = importlib.util.spec_from_file_location(module_name, plugin_file)
+        if spec is None or spec.loader is None:
+            self.logger.warning(f"Cannot create module spec for: {plugin_name}")
+            return
+
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        # Find plugin class (must inherit from PluginBase)
+        plugin_class = None
+        for item_name in dir(module):
+            item = getattr(module, item_name)
+            if (isinstance(item, type) and
+                    issubclass(item, PluginBase) and
+                    item is not PluginBase):
+                plugin_class = item
+                break
+
+        if plugin_class is None:
+            self.logger.warning(f"No PluginBase subclass found in '{plugin_name}', skipping")
+            return
+
+        # Check that get_metadata is available
+        if not hasattr(plugin_class, 'get_metadata') or not callable(getattr(plugin_class, 'get_metadata', None)):
+            self.logger.warning(f"Plugin '{plugin_name}' does not implement get_metadata, skipping")
+            return
+
+        # Temporarily instantiate to get metadata
+        temp_instance = plugin_class()
+        metadata = temp_instance.get_metadata()
+
+        if not isinstance(metadata, dict) or "plugin_id" not in metadata:
+            self.logger.warning(f"Plugin '{plugin_name}' returned invalid metadata, skipping")
+            return
+
+        plugin_id = metadata["plugin_id"]
+
+        # Avoid duplicate plugin_id
+        if plugin_id in self.discovered_plugins:
+            self.logger.warning(f"Duplicate plugin_id '{plugin_id}' from '{plugin_name}', skipping")
+            return
+
+        self.discovered_plugins[plugin_id] = {
+            "metadata": metadata,
+            "class": plugin_class,
+            "module": module,
+            "file": plugin_file,
+        }
+
+        # Auto-generate default config file if not exists
+        self._ensure_plugin_config(plugin_id, metadata.get("config_schema", {}))
+
+        self.logger.info(f"Discovered plugin: {plugin_id} ({metadata.get('name', plugin_id)})")
+
+    def _ensure_plugin_config(self, plugin_id: str, config_schema: dict):
+        """Create default config file for a plugin if it doesn't exist"""
+        config_file = self.plugin_config_dir / f"{plugin_id}.json"
+        if config_file.exists():
+            return
+
+        default_config = {}
+        for key, schema in config_schema.items():
+            if "default" in schema:
+                default_config[key] = schema["default"]
+            else:
+                default_config[key] = ""
+
+        self._atomic_write_json(config_file, default_config)
+        self.logger.debug(f"Created default config for plugin: {plugin_id}")
+
     def _load_enabled_plugins(self):
         """Load plugins that are enabled in configuration"""
         try:
             enabled_plugins = self.config_manager.get("plugin.enabled_plugins", [])
-            
-            for plugin_name in enabled_plugins:
-                self.load_plugin(plugin_name)
-            
+
+            for plugin_id in enabled_plugins:
+                if plugin_id in self.discovered_plugins:
+                    self.load_plugin(plugin_id)
+                else:
+                    self.logger.warning(f"Enabled plugin '{plugin_id}' not found in discovered plugins")
+
         except Exception as e:
             self.logger.error(f"Failed to load enabled plugins: {e}")
-    
-    def load_plugin(self, plugin_name: str) -> bool:
-        """Load a plugin by name"""
+
+    def load_plugin(self, plugin_id: str) -> bool:
+        """Load a plugin by its plugin_id"""
         try:
             # Check if already loaded
-            if plugin_name in self.plugins:
-                self.logger.warning(f"Plugin already loaded: {plugin_name}")
+            if plugin_id in self.plugins:
+                self.logger.warning(f"Plugin already loaded: {plugin_id}")
                 return True
-            
-            # Find plugin file or package
-            plugin_file = self.plugin_dir / f"{plugin_name}.py"
-            if not plugin_file.exists():
-                plugin_file = self.plugin_dir / plugin_name / "__init__.py"
-            
-            if not plugin_file.exists():
-                self.logger.error(f"Plugin file not found: {plugin_file}")
+
+            # Must be discovered first
+            if plugin_id not in self.discovered_plugins:
+                self.logger.error(f"Plugin not discovered: {plugin_id}")
                 return False
-            
-            # Load module
-            spec = importlib.util.spec_from_file_location(plugin_name, plugin_file)
-            if spec is None or spec.loader is None:
-                self.logger.error(f"Failed to load plugin spec: {plugin_name}")
-                return False
-            
-            module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)
-            
-            # Find plugin class (should inherit from PluginBase)
-            plugin_class = None
-            for item_name in dir(module):
-                item = getattr(module, item_name)
-                if (isinstance(item, type) and 
-                    issubclass(item, PluginBase) and 
-                    item != PluginBase):
-                    plugin_class = item
-                    break
-            
-            if plugin_class is None:
-                self.logger.error(f"No plugin class found in {plugin_name}")
-                return False
-            
+
+            discovery_info = self.discovered_plugins[plugin_id]
+            plugin_class = discovery_info["class"]
+            metadata = discovery_info["metadata"]
+
             # Instantiate plugin
             plugin_instance = plugin_class()
-            
-            # Load saved settings from config
-            if hasattr(plugin_instance, 'get_settings'):
-                saved_settings = {}
-                settings_def = plugin_instance.get_settings()
-                for setting_key in settings_def:
-                    saved_value = self.config_manager.get(f"plugins.{plugin_name}.{setting_key}")
-                    if saved_value is not None:
-                        saved_settings[setting_key] = saved_value
-                if saved_settings and hasattr(plugin_instance, 'apply_settings'):
-                    plugin_instance.apply_settings(saved_settings)
-            
-            # Call on_load if implemented
-            if hasattr(plugin_instance, 'on_load'):
+
+            # Load saved config and apply
+            config_schema = metadata.get("config_schema", {})
+            if config_schema:
+                saved_config = self.get_plugin_config(plugin_id)
+                if saved_config and hasattr(plugin_instance, 'apply_settings'):
+                    plugin_instance.apply_settings(saved_config)
+
+            # Call on_load
+            try:
                 plugin_instance.on_load()
-            
+            except Exception as e:
+                self.logger.error(f"Plugin '{plugin_id}' on_load failed: {e}", exc_info=True)
+
             # Store plugin
-            self.plugins[plugin_name] = plugin_instance
-            
+            self.plugins[plugin_id] = plugin_instance
+
             # Emit signal
-            self.plugin_loaded.emit(plugin_name)
-            
-            self.logger.info(f"Loaded plugin: {plugin_name}")
+            self.plugin_loaded.emit(plugin_id)
+
+            self.logger.info(f"Loaded plugin: {plugin_id}")
             return True
-            
+
         except Exception as e:
-            self.logger.error(f"Failed to load plugin {plugin_name}: {e}", exc_info=True)
-            self.plugin_error.emit(plugin_name, str(e))
+            self.logger.error(f"Failed to load plugin {plugin_id}: {e}", exc_info=True)
+            self.plugin_error.emit(plugin_id, str(e))
             return False
-    
-    def unload_plugin(self, plugin_name: str):
+
+    def unload_plugin(self, plugin_id: str):
         """Unload a plugin"""
         try:
-            if plugin_name not in self.plugins:
-                self.logger.warning(f"Plugin not loaded: {plugin_name}")
+            if plugin_id not in self.plugins:
+                self.logger.warning(f"Plugin not loaded: {plugin_id}")
                 return
-            
-            plugin = self.plugins[plugin_name]
-            
-            # Call on_unload if implemented
-            if hasattr(plugin, 'on_unload'):
+
+            plugin = self.plugins[plugin_id]
+
+            # Call on_unload
+            try:
                 plugin.on_unload()
-            
+            except Exception as e:
+                self.logger.error(f"Plugin '{plugin_id}' on_unload failed: {e}", exc_info=True)
+
             # Remove from loaded plugins
-            del self.plugins[plugin_name]
-            
+            del self.plugins[plugin_id]
+
             # Emit signal
-            self.plugin_unloaded.emit(plugin_name)
-            
-            self.logger.info(f"Unloaded plugin: {plugin_name}")
-            
+            self.plugin_unloaded.emit(plugin_id)
+
+            self.logger.info(f"Unloaded plugin: {plugin_id}")
+
         except Exception as e:
-            self.logger.error(f"Failed to unload plugin {plugin_name}: {e}")
-    
-    def enable_plugin(self, plugin_name: str):
+            self.logger.error(f"Failed to unload plugin {plugin_id}: {e}")
+
+    def enable_plugin(self, plugin_id: str):
         """Enable a plugin"""
         try:
-            # Load the plugin
-            if self.load_plugin(plugin_name):
-                # Add to enabled plugins list
+            if self.load_plugin(plugin_id):
                 enabled_plugins = self.config_manager.get("plugin.enabled_plugins", [])
-                if plugin_name not in enabled_plugins:
-                    enabled_plugins.append(plugin_name)
+                if plugin_id not in enabled_plugins:
+                    enabled_plugins.append(plugin_id)
                     self.config_manager.set("plugin.enabled_plugins", enabled_plugins)
-                
-                self.logger.info(f"Enabled plugin: {plugin_name}")
-            
+
+                self.logger.info(f"Enabled plugin: {plugin_id}")
+
         except Exception as e:
-            self.logger.error(f"Failed to enable plugin {plugin_name}: {e}")
-    
-    def disable_plugin(self, plugin_name: str):
+            self.logger.error(f"Failed to enable plugin {plugin_id}: {e}")
+
+    def disable_plugin(self, plugin_id: str):
         """Disable a plugin"""
         try:
-            # Unload the plugin
-            self.unload_plugin(plugin_name)
-            
-            # Remove from enabled plugins list
+            self.unload_plugin(plugin_id)
+
             enabled_plugins = self.config_manager.get("plugin.enabled_plugins", [])
-            if plugin_name in enabled_plugins:
-                enabled_plugins.remove(plugin_name)
+            if plugin_id in enabled_plugins:
+                enabled_plugins.remove(plugin_id)
                 self.config_manager.set("plugin.enabled_plugins", enabled_plugins)
-            
-            self.logger.info(f"Disabled plugin: {plugin_name}")
-            
+
+            self.logger.info(f"Disabled plugin: {plugin_id}")
+
         except Exception as e:
-            self.logger.error(f"Failed to disable plugin {plugin_name}: {e}")
-    
+            self.logger.error(f"Failed to disable plugin {plugin_id}: {e}")
+
     def handle_plugin_click(self, plugin_instance: PluginBase):
-        """Handle plugin click event"""
+        """Handle plugin click event with isolation"""
         try:
             plugin_instance.handle_click()
-            self.logger.debug(f"Handled click for plugin: {plugin_instance.get_name()}")
-            
+            metadata = plugin_instance.get_metadata()
+            self.logger.debug(f"Handled click for plugin: {metadata.get('name', 'unknown')}")
+
         except Exception as e:
-            plugin_name = plugin_instance.get_name() if hasattr(plugin_instance, 'get_name') else 'unknown'
+            try:
+                plugin_name = plugin_instance.get_metadata().get("name", "unknown")
+            except Exception:
+                plugin_name = "unknown"
             self.logger.error(f"Plugin click handler failed for {plugin_name}: {e}", exc_info=True)
             self.plugin_error.emit(plugin_name, str(e))
-    
+
     def get_loaded_plugins(self) -> List[PluginBase]:
-        """Get list of loaded plugins"""
+        """Get list of loaded plugin instances"""
         return list(self.plugins.values())
-    
+
+    def get_discovered_plugins(self) -> Dict[str, dict]:
+        """Get metadata for all discovered plugins: {plugin_id: metadata_dict}"""
+        return {pid: info["metadata"] for pid, info in self.discovered_plugins.items()}
+
+    def get_plugin_config(self, plugin_id: str) -> dict:
+        """Read per-plugin configuration from config/plugins/[plugin_id].json"""
+        config_file = self.plugin_config_dir / f"{plugin_id}.json"
+        try:
+            if config_file.exists():
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+        except Exception as e:
+            self.logger.error(f"Failed to read config for plugin '{plugin_id}': {e}")
+        return {}
+
+    def set_plugin_config(self, plugin_id: str, config_data: dict):
+        """Write per-plugin configuration to config/plugins/[plugin_id].json (atomic)"""
+        config_file = self.plugin_config_dir / f"{plugin_id}.json"
+        try:
+            # Merge with existing config
+            existing = self.get_plugin_config(plugin_id)
+            existing.update(config_data)
+            self._atomic_write_json(config_file, existing)
+            self.logger.debug(f"Saved config for plugin: {plugin_id}")
+        except Exception as e:
+            self.logger.error(f"Failed to save config for plugin '{plugin_id}': {e}")
+
+    def _atomic_write_json(self, file_path: Path, data: dict):
+        """Write JSON atomically using temp file + rename"""
+        dir_path = file_path.parent
+        try:
+            fd, tmp_path = tempfile.mkstemp(dir=str(dir_path), suffix=".tmp")
+            try:
+                with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, indent=2, ensure_ascii=False)
+                # Atomic rename
+                os.replace(tmp_path, str(file_path))
+            except Exception:
+                # Clean up temp file on error
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+                raise
+        except Exception as e:
+            self.logger.error(f"Atomic write failed for {file_path}: {e}")
+            raise
+
     def shutdown(self):
         """Shutdown plugin system and unload all plugins"""
         try:
-            plugin_names = list(self.plugins.keys())
-            for plugin_name in plugin_names:
-                self.unload_plugin(plugin_name)
-            
+            plugin_ids = list(self.plugins.keys())
+            for plugin_id in plugin_ids:
+                try:
+                    self.unload_plugin(plugin_id)
+                except Exception as e:
+                    self.logger.error(f"Error unloading plugin '{plugin_id}' during shutdown: {e}")
+
             self.logger.info("Plugin system shutdown complete")
-            
+
         except Exception as e:
             self.logger.error(f"Error during plugin system shutdown: {e}")

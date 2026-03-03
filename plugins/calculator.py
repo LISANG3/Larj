@@ -13,18 +13,15 @@ class CalculatorPlugin(PluginBase):
     Simple calculator plugin
     """
     
-    def get_name(self) -> str:
-        return "Calculator"
-    
-    def get_icon(self) -> str:
-        return "calculator"
-    
-    def get_info(self) -> dict:
+    def get_metadata(self) -> dict:
         return {
+            "plugin_id": "calculator",
             "name": "Calculator",
+            "icon": "calculator",
             "version": "1.0.0",
             "author": "Larj Team",
-            "description": "A simple calculator plugin"
+            "description": "A simple calculator plugin",
+            "config_schema": {}
         }
     
     def handle_click(self):

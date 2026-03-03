@@ -45,6 +45,10 @@ Thumbs.db
 config/settings.json
 config/apps.json
 config/plugins.json
+config/plugins/
+
+# Pytest cache
+.pytest_cache/
 
 # Everything database files
 *.db
