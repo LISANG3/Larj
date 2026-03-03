@@ -15,7 +15,7 @@ from PyQt5.QtWidgets import (
     QScrollArea, QLabel, QGridLayout, QListWidget, QListWidgetItem,
     QStackedWidget, QFrame, QDialog, QDialogButtonBox, QFormLayout,
     QCheckBox, QSpinBox, QFileDialog, QMessageBox, QGraphicsDropShadowEffect,
-    QMenu, QAction, QInputDialog
+    QMenu, QAction, QInputDialog, QColorDialog, QComboBox
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QTimer, QMimeData, QPoint
 from PyQt5.QtGui import QIcon, QPixmap, QFont, QColor, QPalette, QLinearGradient, QBrush, QPainter, QPen, QDrag
@@ -79,11 +79,6 @@ def extract_icon_from_file(file_path: str, size: int = 48) -> QIcon:
 class ModernStyle:
     MODERN_STYLE = """
     QWidget#mainPanel {
-        background: qlineargradient(
-            x1: 0, y1: 0, x2: 0, y2: 1,
-            stop: 0 #f8fafc,
-            stop: 1 #f1f5f9
-        );
         border-radius: 16px;
         border: 1px solid #e2e8f0;
     }
@@ -336,7 +331,7 @@ class MainPanel(QWidget):
     def _setup_ui(self):
         """Setup the user interface"""
         self.setObjectName("mainPanel")
-        self.setAutoFillBackground(True)
+        self.setAttribute(Qt.WA_StyledBackground, True)
         
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 16)
@@ -473,9 +468,10 @@ class MainPanel(QWidget):
             all_items = list(apps)
             
             if self.plugin_system:
-                for plugin_name, plugin in self.plugin_system.plugins.items():
+                for plugin_id, plugin in self.plugin_system.plugins.items():
+                    metadata = plugin.get_metadata()
                     all_items.append({
-                        "name": plugin.get_info().get("name", plugin_name),
+                        "name": metadata.get("name", plugin_id),
                         "type": "plugin",
                         "plugin_instance": plugin
                     })
@@ -499,9 +495,9 @@ class MainPanel(QWidget):
     def _create_plugin_button(self, plugin_item: dict) -> QPushButton:
         """Create a button for a plugin"""
         plugin = plugin_item.get("plugin_instance")
-        plugin_info = plugin.get_info()
+        metadata = plugin.get_metadata()
         
-        button = QPushButton(plugin_info.get("name", "Plugin"))
+        button = QPushButton(metadata.get("name", "Plugin"))
         button.setFixedSize(130, 90)
         button.setStyleSheet(ModernStyle.APP_BUTTON_STYLE)
         button.setCursor(Qt.PointingHandCursor)
@@ -570,6 +566,9 @@ class MainPanel(QWidget):
         
         edit_action = menu.addAction("编辑")
         edit_action.triggered.connect(lambda: self._edit_app(app))
+
+        rename_action = menu.addAction("重命名")
+        rename_action.triggered.connect(lambda: self._rename_app(app))
         
         delete_action = menu.addAction("删除")
         delete_action.triggered.connect(lambda: self._delete_app(app))
@@ -629,7 +628,18 @@ class MainPanel(QWidget):
                 updated_app["args"] = new_args
                 self.application_manager.update_app(app.get("id"), updated_app)
                 self._load_apps()
-    
+
+    def _rename_app(self, app: dict):
+        """Quickly rename an application icon"""
+        new_name, ok = QInputDialog.getText(
+            self, "重命名", "请输入新名称:", text=app.get("name", "")
+        )
+        if ok and new_name.strip():
+            updated_app = app.copy()
+            updated_app["name"] = new_name.strip()
+            self.application_manager.update_app(app.get("id"), updated_app)
+            self._load_apps()
+
     def _delete_app(self, app: dict):
         """Delete application"""
         reply = QMessageBox.question(
@@ -831,12 +841,13 @@ class MainPanel(QWidget):
         plugin_layout.setContentsMargins(24, 24, 24, 24)
         
         plugin_settings_widgets = {}
+        plugin_enable_checkboxes = {}
         
-        if self.plugin_system and self.plugin_system.plugins:
-            for plugin_name, plugin in self.plugin_system.plugins.items():
-                plugin_info = plugin.get_info() if hasattr(plugin, 'get_info') else {}
-                settings = plugin.get_settings() if hasattr(plugin, 'get_settings') else {}
-                
+        discovered = self.plugin_system.get_discovered_plugins() if self.plugin_system else {}
+        enabled_plugins = self.config_manager.get("plugin.enabled_plugins", [])
+        
+        if discovered:
+            for plugin_id, metadata in discovered.items():
                 plugin_group = QWidget()
                 plugin_group.setStyleSheet("""
                     QWidget {
@@ -851,24 +862,34 @@ class MainPanel(QWidget):
                 
                 header_layout = QHBoxLayout()
                 
-                name_label = QLabel(plugin_info.get("name", plugin_name))
+                enable_checkbox = QCheckBox()
+                enable_checkbox.setChecked(plugin_id in enabled_plugins)
+                enable_checkbox.setStyleSheet("background: transparent;")
+                header_layout.addWidget(enable_checkbox)
+                plugin_enable_checkboxes[plugin_id] = enable_checkbox
+                
+                name_label = QLabel(metadata.get("name", plugin_id))
                 name_label.setStyleSheet("font-size: 15px; font-weight: 600; color: #1e293b; background: transparent;")
                 header_layout.addWidget(name_label)
                 
-                version_label = QLabel(f"v{plugin_info.get('version', '1.0')}")
+                version_label = QLabel(f"v{metadata.get('version', '1.0')}")
                 version_label.setStyleSheet("font-size: 12px; color: #94a3b8; background: transparent;")
                 header_layout.addWidget(version_label)
                 header_layout.addStretch()
                 
                 group_layout.addLayout(header_layout)
                 
-                desc_label = QLabel(plugin_info.get("description", ""))
+                desc_label = QLabel(metadata.get("description", ""))
                 desc_label.setStyleSheet("font-size: 12px; color: #64748b; background: transparent;")
                 desc_label.setWordWrap(True)
                 group_layout.addWidget(desc_label)
                 
-                if settings:
-                    plugin_settings_widgets[plugin_name] = {}
+                config_schema = metadata.get("config_schema", {})
+                if config_schema:
+                    plugin_settings_widgets[plugin_id] = {}
+                    
+                    # Load saved config for this plugin
+                    saved_config = self.plugin_system.get_plugin_config(plugin_id) if self.plugin_system else {}
                     
                     settings_form = QWidget()
                     settings_form.setStyleSheet("background: transparent;")
@@ -877,27 +898,23 @@ class MainPanel(QWidget):
                     settings_layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
                     settings_layout.setContentsMargins(0, 8, 0, 0)
                     
-                    for setting_key, setting_config in settings.items():
-                        setting_type = setting_config.get("type", "text")
-                        label = setting_config.get("label", setting_key)
-                        default_value = setting_config.get("default", "")
+                    for setting_key, schema in config_schema.items():
+                        setting_type = schema.get("type", "str")
+                        label = schema.get("desc", setting_key)
+                        default_value = schema.get("default", "")
                         
-                        saved_value = self.config_manager.get(f"plugins.{plugin_name}.{setting_key}", default_value)
+                        saved_value = saved_config.get(setting_key, default_value)
                         
-                        if setting_type == "password":
-                            widget = QLineEdit()
+                        widget = QLineEdit()
+                        # Use password mode if schema declares secret: true
+                        if schema.get("secret", False):
                             widget.setEchoMode(QLineEdit.Password)
-                            widget.setText(str(saved_value))
-                            widget.setMinimumWidth(200)
-                            widget.setStyleSheet("background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 10px;")
-                        else:
-                            widget = QLineEdit()
-                            widget.setText(str(saved_value))
-                            widget.setMinimumWidth(200)
-                            widget.setStyleSheet("background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 10px;")
+                        widget.setText(str(saved_value))
+                        widget.setMinimumWidth(200)
+                        widget.setStyleSheet("background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 10px;")
                         
                         settings_layout.addRow(label + ":", widget)
-                        plugin_settings_widgets[plugin_name][setting_key] = widget
+                        plugin_settings_widgets[plugin_id][setting_key] = widget
                     
                     group_layout.addWidget(settings_form)
                 
@@ -916,7 +933,112 @@ class MainPanel(QWidget):
         scroll_area.setStyleSheet("QScrollArea { border: none; background: #ffffff; }")
         
         tab_widget.addTab(scroll_area, "插件管理")
-        
+
+        # ── Appearance tab ────────────────────────────────────────────────────
+        appearance_widget = QWidget()
+        appearance_layout = QVBoxLayout(appearance_widget)
+        appearance_layout.setSpacing(20)
+        appearance_layout.setContentsMargins(24, 24, 24, 24)
+
+        # -- Background type ---
+        bg_type_label = QLabel("背景类型")
+        bg_type_label.setStyleSheet("font-size: 13px; font-weight: 600; color: #1e293b;")
+        appearance_layout.addWidget(bg_type_label)
+
+        bg_type_combo = QComboBox()
+        bg_type_combo.addItem("纯色", "solid")
+        bg_type_combo.addItem("图片", "image")
+        current_bg_type = self.config_manager.get("appearance.background_type", "solid")
+        for idx in range(bg_type_combo.count()):
+            if bg_type_combo.itemData(idx) == current_bg_type:
+                bg_type_combo.setCurrentIndex(idx)
+                break
+        bg_type_combo.setStyleSheet("""
+            QComboBox {
+                padding: 8px 12px; font-size: 13px; border: 2px solid #e2e8f0;
+                border-radius: 8px; background: #f8fafc; color: #1e293b;
+            }
+            QComboBox::drop-down { border: none; }
+        """)
+        appearance_layout.addWidget(bg_type_combo)
+
+        def _make_color_btn(config_key: str, default: str) -> QPushButton:
+            color = self.config_manager.get(config_key, default)
+            btn = QPushButton()
+            btn.setFixedSize(100, 32)
+            btn.setStyleSheet(f"background: {color}; border: 2px solid #e2e8f0; border-radius: 6px;")
+            btn.setProperty("color_value", color)
+
+            def pick(checked=False, b=btn, key=config_key):
+                current = QColor(b.property("color_value"))
+                chosen = QColorDialog.getColor(current, dialog, "选择颜色")
+                if chosen.isValid():
+                    hex_color = chosen.name()
+                    b.setProperty("color_value", hex_color)
+                    b.setStyleSheet(f"background: {hex_color}; border: 2px solid #e2e8f0; border-radius: 6px;")
+
+            btn.clicked.connect(pick)
+            return btn
+
+        # -- Solid color --
+        solid_widget = QWidget()
+        solid_layout = QFormLayout(solid_widget)
+        solid_layout.setSpacing(12)
+        solid_layout.setContentsMargins(0, 0, 0, 0)
+        solid_color_btn = _make_color_btn("appearance.background_color", "#f8fafc")
+        solid_layout.addRow("背景颜色:", solid_color_btn)
+        appearance_layout.addWidget(solid_widget)
+
+        # -- Image picker --
+        image_widget = QWidget()
+        image_layout = QHBoxLayout(image_widget)
+        image_layout.setContentsMargins(0, 0, 0, 0)
+        image_layout.setSpacing(8)
+        image_path_input = QLineEdit()
+        image_path_input.setText(self.config_manager.get("appearance.background_image", ""))
+        image_path_input.setReadOnly(True)
+        image_path_input.setPlaceholderText("选择图片文件...")
+        image_path_input.setStyleSheet("padding: 8px 12px; font-size: 13px; border: 2px solid #e2e8f0; border-radius: 8px;")
+        browse_btn = QPushButton("浏览")
+        browse_btn.setFixedSize(70, 36)
+        browse_btn.setStyleSheet(
+            "QPushButton { background: #f1f5f9; color: #475569; border: none; border-radius: 8px; font-size: 13px; }"
+            "QPushButton:hover { background: #e2e8f0; }"
+        )
+
+        def pick_image():
+            path, _ = QFileDialog.getOpenFileName(
+                dialog, "选择背景图片", "",
+                "Images (*.png *.jpg *.jpeg *.bmp *.gif *.webp);;All Files (*)"
+            )
+            if path:
+                image_path_input.setText(path)
+
+        browse_btn.clicked.connect(pick_image)
+        image_layout.addWidget(image_path_input)
+        image_layout.addWidget(browse_btn)
+        appearance_layout.addWidget(image_widget)
+
+        # -- Accent color --
+        accent_label = QLabel("主题强调色")
+        accent_label.setStyleSheet("font-size: 13px; font-weight: 600; color: #1e293b; margin-top: 8px;")
+        appearance_layout.addWidget(accent_label)
+        accent_color_btn = _make_color_btn("appearance.accent_color", "#3b82f6")
+        appearance_layout.addWidget(accent_color_btn)
+
+        # Show/hide sub-sections based on bg_type_combo selection
+        def _update_appearance_sections(index=None):
+            selected = bg_type_combo.currentData()
+            solid_widget.setVisible(selected == "solid")
+            image_widget.setVisible(selected == "image")
+
+        bg_type_combo.currentIndexChanged.connect(_update_appearance_sections)
+        _update_appearance_sections()
+
+        appearance_layout.addStretch()
+        tab_widget.addTab(appearance_widget, "外观")
+        # ── end Appearance tab ───────────────────────────────────────────────
+
         main_layout.addWidget(tab_widget)
         
         button_container = QWidget()
@@ -971,16 +1093,41 @@ class MainPanel(QWidget):
                 self.config_manager.set("window.follow_mouse", follow_mouse_checkbox.isChecked())
                 self.config_manager.set("window.hide_on_focus_loss", hide_on_focus_loss_checkbox.isChecked())
                 self.config_manager.set("search.max_results", max_results_spinbox.value())
+
+                # Save appearance settings
+                self.config_manager.set("appearance.background_type", bg_type_combo.currentData())
+                self.config_manager.set("appearance.background_color", solid_color_btn.property("color_value"))
+                self.config_manager.set("appearance.background_image", image_path_input.text())
+                self.config_manager.set("appearance.accent_color", accent_color_btn.property("color_value"))
+                self.update()  # Repaint main panel with new background
                 
-                for plugin_name, widgets in plugin_settings_widgets.items():
-                    if plugin_name in self.plugin_system.plugins:
-                        plugin = self.plugin_system.plugins[plugin_name]
-                        settings = {}
-                        for setting_key, widget in widgets.items():
-                            value = widget.text()
-                            settings[setting_key] = value
-                            self.config_manager.set(f"plugins.{plugin_name}.{setting_key}", value)
-                        plugin.apply_settings(settings)
+                # Save plugin enable/disable state
+                new_enabled = []
+                for plugin_id, checkbox in plugin_enable_checkboxes.items():
+                    if checkbox.isChecked():
+                        new_enabled.append(plugin_id)
+                        # Enable plugin if not already loaded
+                        if plugin_id not in self.plugin_system.plugins:
+                            self.plugin_system.load_plugin(plugin_id)
+                    else:
+                        # Disable plugin if currently loaded
+                        if plugin_id in self.plugin_system.plugins:
+                            self.plugin_system.unload_plugin(plugin_id)
+                self.config_manager.set("plugin.enabled_plugins", new_enabled)
+                
+                # Save per-plugin config to config/plugins/[plugin_id].json
+                for plugin_id, widgets in plugin_settings_widgets.items():
+                    settings = {}
+                    for setting_key, widget in widgets.items():
+                        value = widget.text()
+                        settings[setting_key] = value
+                    self.plugin_system.set_plugin_config(plugin_id, settings)
+                    # Apply settings to loaded plugin instance
+                    if plugin_id in self.plugin_system.plugins:
+                        self.plugin_system.plugins[plugin_id].apply_settings(settings)
+                
+                # Reload app grid to reflect plugin enable/disable changes
+                self._load_apps()
         finally:
             self._settings_dialog = None
     
@@ -1072,19 +1219,43 @@ class MainPanel(QWidget):
         super().closeEvent(event)
 
     def paintEvent(self, event):
-        """Paint the gradient background"""
+        """Paint the background using configured appearance settings"""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        
-        gradient = QLinearGradient(0, 0, 0, self.height())
-        gradient.setColorAt(0, QColor("#f8fafc"))
-        gradient.setColorAt(1, QColor("#f1f5f9"))
-        
-        painter.setBrush(QBrush(gradient))
+
+        bg_type = self.config_manager.get("appearance.background_type", "solid")
+        bg_color = self.config_manager.get("appearance.background_color", "#f8fafc")
+
+        if bg_type == "image":
+            image_path = self.config_manager.get("appearance.background_image", "")
+            if image_path and os.path.exists(image_path):
+                pixmap = QPixmap(image_path)
+                if not pixmap.isNull():
+                    scaled = pixmap.scaled(
+                        self.size(),
+                        Qt.KeepAspectRatioByExpanding,
+                        Qt.SmoothTransformation,
+                    )
+                    painter.drawPixmap(0, 0, scaled)
+                    painter.setPen(QPen(QColor("#e2e8f0"), 1))
+                    painter.setBrush(Qt.NoBrush)
+                    painter.drawRect(self.rect())
+                    super().paintEvent(event)
+                    return
+
+        color = QColor(bg_color)
+        painter.setBrush(QBrush(color))
         painter.setPen(QPen(QColor("#e2e8f0"), 1))
         painter.drawRect(self.rect())
-        
+
         super().paintEvent(event)
+
+    def _paint_solid_fallback(self, painter):
+        """Paint a solid background as fallback."""
+        color = QColor(self.config_manager.get("appearance.background_color", "#f8fafc"))
+        painter.setBrush(QBrush(color))
+        painter.setPen(QPen(QColor("#e2e8f0"), 1))
+        painter.drawRect(self.rect())
 
     def focusOutEvent(self, event):
         """Hide the panel when focus is lost by clicking outside."""

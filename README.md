@@ -16,10 +16,12 @@ Larj 是一个轻量级的 Windows 桌面效率工具，提供快速文件搜索
 - [使用方法](#使用方法)
 - [项目结构](#项目结构)
 - [技术架构](#技术架构)
-- [插件开发](#插件开发)
+- [插件系统](#插件系统)
 - [配置说明](#配置说明)
 - [常见问题](#常见问题)
 - [贡献指南](#贡献指南)
+
+> **插件开发详细指南**: 参见 [PLUGINS.md](PLUGINS.md)
 
 ## 安装
 
@@ -106,6 +108,7 @@ Larj/
 │
 ├── main.py               # 程序入口
 ├── launch.bat            # Windows 启动脚本
+├── PLUGINS.md            # 插件开发指南
 └── requirements.txt      # Python 依赖
 ```
 
@@ -158,107 +161,51 @@ Larj/
 → 调用 es.exe → 解析 CSV 结果 → 更新界面
 ```
 
-## 插件开发
+## 插件系统
+
+Larj 提供可扩展的插件架构，支持自定义功能扩展。
 
 ### 内置插件
 
-#### 腾讯翻译插件 (mtran_server)
+| 插件 | 功能 | 说明 |
+|------|------|------|
+| 腾讯翻译 | 多语言翻译 | 支持 15 种语言互译，自动检测源语言 |
+| OCR 识别 | 屏幕文字识别 | 区域截图识别，高精度 99% 准确率 |
 
-基于腾讯云机器翻译 API 的多语言翻译插件。
+### 插件开发
 
-**功能特性：**
-- 支持 15 种语言互译
-- 自动检测源语言
-- 语言交换功能
-- 字符计数器
+详细的插件开发指南请参阅 **[PLUGINS.md](PLUGINS.md)**，包含：
 
-**配置项：**
-- `secret_id`: 腾讯云 API 密钥 ID
-- `secret_key`: 腾讯云 API 密钥 Key
-- `region`: API 地域
+- 插件架构与生命周期
+- 完整接口说明
+- 配置管理机制
+- 开发最佳实践
+- 完整示例代码
 
-**使用方法：**
-1. 在 [腾讯云控制台](https://console.cloud.tencent.com/cam/capi) 获取 API 密钥
-2. 在设置 → 插件管理中配置密钥
-3. 点击翻译图标打开翻译对话框
+### 快速开始
 
-#### OCR 识别插件
-
-基于腾讯云 OCR API 的屏幕文字识别插件。
-
-**功能特性：**
-- 区域截图识别
-- 高精度识别（99% 准确率）
-- 支持 20+ 种语言
-- 一键复制结果
-
-**配置项：**
-- `secret_id`: 腾讯云 API 密钥 ID
-- `secret_key`: 腾讯云 API 密钥 Key
-- `region`: API 地域
-
-**使用方法：**
-1. 在 [腾讯云控制台](https://console.cloud.tencent.com/cam/capi) 获取 API 密钥
-2. 在设置 → 插件管理中配置密钥
-3. 点击 OCR 图标进入截图模式
-4. 拖拽选择识别区域
-5. 查看识别结果
-
-### 创建插件
-
-1. 在 `plugins/` 目录创建 `.py` 文件或插件目录（目录内需包含 `__init__.py`）
-2. 继承 `PluginBase` 类
-3. 实现必需方法
-
-### 插件接口
+1. 在 `plugins/` 目录创建插件文件
+2. 继承 `PluginBase` 类并实现必需方法
+3. 在 `config/settings.json` 中启用插件
 
 ```python
 from src.core.plugin_system import PluginBase
 
 class MyPlugin(PluginBase):
-    def get_name(self) -> str:
-        return "My Plugin"
-    
-    def get_icon(self) -> str:
-        return "icon_name"
-    
-    def get_info(self) -> dict:
+    def get_metadata(self) -> dict:
         return {
+            "plugin_id": "my_plugin",
             "name": "My Plugin",
             "version": "1.0.0",
-            "author": "Your Name",
             "description": "插件描述"
         }
     
     def handle_click(self):
-        # 点击时执行的逻辑
         pass
-    
-    def on_load(self):
-        # 可选：加载时调用
-        pass
-    
-    def on_unload(self):
-        # 可选：卸载时调用
-        pass
+
+def create_plugin():
+    return MyPlugin()
 ```
-
-### 启用插件
-
-在 `config/settings.json` 中配置：
-```json
-{
-  "plugin": {
-    "enabled_plugins": ["my_plugin"]
-  }
-}
-```
-
-### 开发建议
-
-- `handle_click()` 中避免长时间阻塞操作
-- 捕获异常并记录，避免影响主程序
-- 仅使用可信输入，避免安全风险
 
 ## 配置说明
 
