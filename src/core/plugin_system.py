@@ -13,7 +13,7 @@ import importlib.util
 import os
 import tempfile
 from pathlib import Path
-from typing import Dict, List, Any, Optional
+from typing import Dict, List
 from PyQt5.QtCore import QObject, pyqtSignal
 
 
@@ -25,7 +25,7 @@ class PluginBase:
 
     def get_metadata(self) -> dict:
         """
-        Get plugin metadata. Plugins should override this method to provide:
+        Get plugin metadata. Plugins must override this method to provide:
         - plugin_id: str - Unique identifier (matches filename/directory name)
         - name: str - Display name
         - icon: str - Icon identifier
@@ -35,27 +35,7 @@ class PluginBase:
         - config_schema: dict - Configuration schema for auto-generating config forms
             Each key maps to: {"type": "str", "required": bool, "default": any, "desc": str}
         """
-        # Default implementation for backward compatibility with old-style plugins
-        info = self.get_info() if hasattr(self, 'get_info') and callable(getattr(self, 'get_info', None)) else {}
-        name = ""
-        try:
-            name = self.get_name()
-        except NotImplementedError:
-            name = info.get("name", self.__class__.__name__)
-        icon = ""
-        try:
-            icon = self.get_icon()
-        except NotImplementedError:
-            icon = ""
-        return {
-            "plugin_id": name.lower().replace(" ", "_") if name else self.__class__.__name__.lower(),
-            "name": info.get("name", name),
-            "icon": icon,
-            "version": info.get("version", "1.0.0"),
-            "author": info.get("author", ""),
-            "description": info.get("description", ""),
-            "config_schema": {}
-        }
+        raise NotImplementedError("Plugins must implement get_metadata()")
 
     def handle_click(self):
         """Handle plugin click event"""
@@ -73,23 +53,6 @@ class PluginBase:
     def apply_settings(self, settings: dict):
         """Apply configuration settings to the plugin"""
         pass
-
-    # Legacy methods kept for backward compatibility
-    def get_name(self) -> str:
-        """Get plugin name (legacy, use get_metadata instead)"""
-        return self.get_metadata().get("name", self.__class__.__name__)
-
-    def get_icon(self) -> str:
-        """Get plugin icon (legacy, use get_metadata instead)"""
-        return self.get_metadata().get("icon", "")
-
-    def get_info(self) -> Dict[str, Any]:
-        """Get plugin information (legacy, use get_metadata instead)"""
-        return {}
-
-    def get_settings(self) -> Dict[str, Any]:
-        """Get plugin settings (legacy, use config_schema in get_metadata instead)"""
-        return {}
 
 
 class PluginSystem(QObject):

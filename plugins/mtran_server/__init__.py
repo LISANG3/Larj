@@ -435,8 +435,8 @@ class TranslationDialog(QDialog):
             self.status_label.setText("文本长度超过6000字符限制")
             return
         
-        secret_id = self.plugin.get_secret_id()
-        secret_key = self.plugin.get_secret_key()
+        secret_id = self.plugin._secret_id
+        secret_key = self.plugin._secret_key
         
         if not secret_id or not secret_key:
             self.status_label.setText("请先配置 SecretId 和 SecretKey")
@@ -451,7 +451,7 @@ class TranslationDialog(QDialog):
         
         self.worker = TranslationWorker(
             secret_id, secret_key, text, source_lang, target_lang,
-            self.plugin.get_region()
+            self.plugin._region
         )
         self.worker.finished.connect(self.on_translation_finished)
         self.worker.error.connect(self.on_translation_error)
@@ -526,24 +526,6 @@ class TencentTranslationPlugin(PluginBase):
             }
         }
     
-    def get_secret_id(self) -> str:
-        return self._secret_id
-    
-    def set_secret_id(self, secret_id: str):
-        self._secret_id = secret_id
-    
-    def get_secret_key(self) -> str:
-        return self._secret_key
-    
-    def set_secret_key(self, secret_key: str):
-        self._secret_key = secret_key
-    
-    def get_region(self) -> str:
-        return self._region
-    
-    def set_region(self, region: str):
-        self._region = region
-    
     def handle_click(self):
         if self._dialog is None or not self._dialog.isVisible():
             self._dialog = TranslationDialog(self)
@@ -560,16 +542,13 @@ class TencentTranslationPlugin(PluginBase):
             self._dialog.close()
         self.logger.info("TencentTranslation plugin unloaded")
     
-    def get_settings(self) -> dict:
-        return {}
-    
     def apply_settings(self, settings: dict):
         if "secret_id" in settings:
-            self.set_secret_id(settings["secret_id"])
+            self._secret_id = settings["secret_id"]
         if "secret_key" in settings:
-            self.set_secret_key(settings["secret_key"])
+            self._secret_key = settings["secret_key"]
         if "region" in settings:
-            self.set_region(settings["region"])
+            self._region = settings["region"]
 
 
 plugin_class = TencentTranslationPlugin

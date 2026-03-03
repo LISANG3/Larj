@@ -131,14 +131,6 @@ class TestPluginBase:
         assert plugin._settings["api_key"] == "test123"
         assert plugin._settings["region"] == "eu-west"
 
-    def test_legacy_get_name(self):
-        plugin = SamplePlugin()
-        assert plugin.get_name() == "Sample Test Plugin"
-
-    def test_legacy_get_icon(self):
-        plugin = SamplePlugin()
-        assert plugin.get_icon() == "test"
-
 
 class TestPluginSystem:
     """Tests for PluginSystem class"""
@@ -564,9 +556,9 @@ class TestExistingPlugins:
             "secret_key": "test_key",
             "region": "ap-shanghai"
         })
-        assert plugin.get_secret_id() == "test_id"
-        assert plugin.get_secret_key() == "test_key"
-        assert plugin.get_region() == "ap-shanghai"
+        assert plugin._secret_id == "test_id"
+        assert plugin._secret_key == "test_key"
+        assert plugin._region == "ap-shanghai"
 
     def test_mtran_apply_settings(self):
         from plugins.mtran_server import TencentTranslationPlugin
@@ -576,6 +568,6 @@ class TestExistingPlugins:
             "secret_key": "test_key",
             "region": "ap-shanghai"
         })
-        assert plugin.get_secret_id() == "test_id"
-        assert plugin.get_secret_key() == "test_key"
-        assert plugin.get_region() == "ap-shanghai"
+        assert plugin._secret_id == "test_id"
+        assert plugin._secret_key == "test_key"
+        assert plugin._region == "ap-shanghai"

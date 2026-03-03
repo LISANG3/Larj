@@ -296,24 +296,6 @@ class TencentOcrPlugin(PluginBase):
             }
         }
     
-    def get_secret_id(self) -> str:
-        return self._secret_id
-    
-    def set_secret_id(self, secret_id: str):
-        self._secret_id = secret_id
-    
-    def get_secret_key(self) -> str:
-        return self._secret_key
-    
-    def set_secret_key(self, secret_key: str):
-        self._secret_key = secret_key
-    
-    def get_region(self) -> str:
-        return self._region
-    
-    def set_region(self, region: str):
-        self._region = region
-    
     def handle_click(self):
         self.start_capture()
     
@@ -415,16 +397,13 @@ class TencentOcrPlugin(PluginBase):
         self.cleanup_temp_file()
         self.logger.info("TencentOcr plugin unloaded")
     
-    def get_settings(self) -> dict:
-        return {}
-    
     def apply_settings(self, settings: dict):
         if "secret_id" in settings:
-            self.set_secret_id(settings["secret_id"])
+            self._secret_id = settings["secret_id"]
         if "secret_key" in settings:
-            self.set_secret_key(settings["secret_key"])
+            self._secret_key = settings["secret_key"]
         if "region" in settings:
-            self.set_region(settings["region"])
+            self._region = settings["region"]
 
 
 plugin_class = TencentOcrPlugin
