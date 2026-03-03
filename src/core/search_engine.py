@@ -12,6 +12,7 @@ import os
 import subprocess
 import time
 from pathlib import Path
+from collections import OrderedDict
 from typing import List, Dict
 from PyQt5.QtCore import QObject, pyqtSignal, QTimer, QThread
 
@@ -179,7 +180,8 @@ class SearchEngine(QObject):
         
         # Search state
         self.current_worker = None
-        self.search_cache = {}  # keyword -> (timestamp, results)
+        self.search_cache = OrderedDict()  # keyword -> (timestamp, results)
+        self.cache_max_size = 100  # maximum number of cached searches
         self.cache_timeout = 60  # seconds
         
         # Debounce timer for real-time search
@@ -273,8 +275,10 @@ class SearchEngine(QObject):
     
     def _on_search_completed(self, keyword: str, results: List[Dict]):
         """Handle search completion"""
-        # Update cache
+        # Update cache with bounded size
         self.search_cache[keyword] = (time.time(), results)
+        while len(self.search_cache) > self.cache_max_size:
+            self.search_cache.popitem(last=False)
         
         # Emit results
         self.search_completed.emit(results)
@@ -287,3 +291,8 @@ class SearchEngine(QObject):
             self.current_worker.terminate()
             self.current_worker.wait()
             self.logger.debug("Search cancelled")
+
+    def clear_cache(self):
+        """Clear the search cache to free memory"""
+        self.search_cache.clear()
+        self.logger.debug("Search cache cleared")

@@ -252,7 +252,6 @@ class PluginSystem(QObject):
         self.discovered_plugins[plugin_id] = {
             "metadata": metadata,
             "class": plugin_class,
-            "module": module,
             "file": plugin_file,
         }
 
@@ -470,6 +469,7 @@ class PluginSystem(QObject):
                 except Exception as e:
                     self.logger.error(f"Error unloading plugin '{plugin_id}' during shutdown: {e}")
 
+            self.discovered_plugins.clear()
             self.logger.info("Plugin system shutdown complete")
 
         except Exception as e:
