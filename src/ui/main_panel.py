@@ -320,6 +320,7 @@ class MainPanel(QWidget):
         self.plugin_system = plugin_system
         self._settings_dialog = None
         self._mouse_listener = None
+        self._bg_pixmap_cache = None  # ((path, width, height), scaled_pixmap)
         
         self._setup_ui()
         self._connect_signals()
@@ -505,7 +506,6 @@ class MainPanel(QWidget):
         button.setProperty("plugin_data", plugin_item)
         button.clicked.connect(lambda: self._on_plugin_clicked(plugin))
         
-        from PyQt5.QtGui import QFont
         button.setFont(QFont("Segoe UI", 11, QFont.Bold))
         
         return button
@@ -1229,13 +1229,21 @@ class MainPanel(QWidget):
         if bg_type == "image":
             image_path = self.config_manager.get("appearance.background_image", "")
             if image_path and os.path.exists(image_path):
-                pixmap = QPixmap(image_path)
-                if not pixmap.isNull():
-                    scaled = pixmap.scaled(
-                        self.size(),
-                        Qt.KeepAspectRatioByExpanding,
-                        Qt.SmoothTransformation,
-                    )
+                cache_key = (image_path, self.size().width(), self.size().height())
+                if self._bg_pixmap_cache is not None and self._bg_pixmap_cache[0] == cache_key:
+                    scaled = self._bg_pixmap_cache[1]
+                else:
+                    pixmap = QPixmap(image_path)
+                    if not pixmap.isNull():
+                        scaled = pixmap.scaled(
+                            self.size(),
+                            Qt.KeepAspectRatioByExpanding,
+                            Qt.SmoothTransformation,
+                        )
+                        self._bg_pixmap_cache = (cache_key, scaled)
+                    else:
+                        scaled = None
+                if scaled is not None:
                     painter.drawPixmap(0, 0, scaled)
                     painter.setPen(QPen(QColor("#e2e8f0"), 1))
                     painter.setBrush(Qt.NoBrush)
@@ -1249,13 +1257,6 @@ class MainPanel(QWidget):
         painter.drawRect(self.rect())
 
         super().paintEvent(event)
-
-    def _paint_solid_fallback(self, painter):
-        """Paint a solid background as fallback."""
-        color = QColor(self.config_manager.get("appearance.background_color", "#f8fafc"))
-        painter.setBrush(QBrush(color))
-        painter.setPen(QPen(QColor("#e2e8f0"), 1))
-        painter.drawRect(self.rect())
 
     def focusOutEvent(self, event):
         """Hide the panel when focus is lost by clicking outside."""

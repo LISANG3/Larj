@@ -150,10 +150,7 @@ class ApplicationManager(QObject):
                 else:
                     cmd = f'"{path}"'
                 
-                if os.name == 'nt':
-                    subprocess.Popen(cmd, shell=True)
-                else:
-                    subprocess.Popen(cmd, shell=True)
+                subprocess.Popen(cmd, shell=True)
             
             self._update_usage_stats(app_id)
             self.app_launched.emit(app_id)

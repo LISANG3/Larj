@@ -164,6 +164,8 @@ class MainController(QObject):
         try:
             if self.hotkey_listener:
                 self.hotkey_listener.stop()
+            if self.search_engine:
+                self.search_engine.clear_cache()
             if self.window_manager:
                 self.window_manager.close()
             if self.plugin_system:
