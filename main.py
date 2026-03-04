@@ -9,8 +9,29 @@ import sys
 import logging
 from pathlib import Path
 
-from PyQt5.QtWidgets import QApplication
+from PyQt5.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QAction
+from PyQt5.QtGui import QIcon, QPixmap, QPainter, QColor
+from PyQt5.QtCore import QSize
 from src.core.main_controller import MainController
+
+
+def create_default_icon():
+    """Create a default icon if no icon file exists"""
+    pixmap = QPixmap(64, 64)
+    pixmap.fill(QColor(59, 130, 246))
+    
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing)
+    painter.setBrush(QColor(255, 255, 255))
+    painter.setPen(QColor(255, 255, 255))
+    font = painter.font()
+    font.setPointSize(32)
+    font.setBold(True)
+    painter.setFont(font)
+    painter.drawText(pixmap.rect(), 0x0084, "L")
+    painter.end()
+    
+    return QIcon(pixmap)
 
 
 def setup_logging():
@@ -36,11 +57,48 @@ def main():
     
     try:
         app = QApplication(sys.argv)
-        app.setQuitOnLastWindowClosed(False)  # Keep running in system tray
+        app.setQuitOnLastWindowClosed(False)
         
-        # Initialize main controller
         controller = MainController()
         controller.initialize()
+        
+        tray_icon = QSystemTrayIcon()
+        icon = create_default_icon()
+        tray_icon.setIcon(icon)
+        tray_icon.setToolTip("Larj - 桌面效率工具")
+        
+        tray_menu = QMenu()
+        
+        show_action = QAction("显示/隐藏", app)
+        show_action.triggered.connect(lambda: (
+            controller.window_manager.hide_window()
+            if controller.window_manager.is_visible()
+            else controller.window_manager.show_window()
+        ))
+        tray_menu.addAction(show_action)
+        
+        tray_menu.addSeparator()
+        
+        quit_action = QAction("退出", app)
+        quit_action.triggered.connect(lambda: (
+            controller.shutdown(),
+            tray_icon.hide(),
+            app.quit()
+        ))
+        tray_menu.addAction(quit_action)
+        
+        tray_icon.setContextMenu(tray_menu)
+        
+        tray_icon.activated.connect(lambda reason: (
+            controller.window_manager.show_window()
+            if reason == QSystemTrayIcon.DoubleClick
+            and not controller.window_manager.is_visible()
+            else controller.window_manager.hide_window()
+            if reason == QSystemTrayIcon.DoubleClick
+            else None
+        ))
+        
+        tray_icon.show()
         
         logger.info("Larj application started successfully")
         sys.exit(app.exec_())
