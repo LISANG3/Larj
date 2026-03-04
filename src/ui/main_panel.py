@@ -830,6 +830,10 @@ class MainPanel(QWidget):
         max_results_spinbox.setMinimumWidth(100)
         form_layout.addRow("搜索结果上限", max_results_spinbox)
         
+        autostart_checkbox = QCheckBox()
+        autostart_checkbox.setChecked(self._is_autostart_enabled())
+        form_layout.addRow("开机自启动", autostart_checkbox)
+        
         general_layout.addWidget(form_widget)
         general_layout.addStretch()
         
@@ -1093,6 +1097,8 @@ class MainPanel(QWidget):
                 self.config_manager.set("window.follow_mouse", follow_mouse_checkbox.isChecked())
                 self.config_manager.set("window.hide_on_focus_loss", hide_on_focus_loss_checkbox.isChecked())
                 self.config_manager.set("search.max_results", max_results_spinbox.value())
+                
+                self._set_autostart(autostart_checkbox.isChecked())
 
                 # Save appearance settings
                 self.config_manager.set("appearance.background_type", bg_type_combo.currentData())
@@ -1210,6 +1216,60 @@ class MainPanel(QWidget):
         """Hide window and clear search (called from mouse listener thread)"""
         self.hide()
         self.clear_search()
+
+    def _is_autostart_enabled(self) -> bool:
+        """Check if autostart is enabled in Windows registry"""
+        try:
+            import winreg
+            key = winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\Run",
+                0,
+                winreg.KEY_READ
+            )
+            try:
+                winreg.QueryValueEx(key, "Larj")
+                winreg.CloseKey(key)
+                return True
+            except FileNotFoundError:
+                winreg.CloseKey(key)
+                return False
+        except Exception as e:
+            self.logger.error(f"Failed to check autostart: {e}")
+            return False
+
+    def _set_autostart(self, enabled: bool):
+        """Enable or disable autostart in Windows registry"""
+        try:
+            import winreg
+            import sys
+            
+            key = winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\Run",
+                0,
+                winreg.KEY_WRITE
+            )
+            
+            if enabled:
+                exe_path = sys.executable
+                if exe_path.endswith("python.exe"):
+                    script_path = os.path.abspath("main.py")
+                    value = f'"{exe_path}" "{script_path}"'
+                else:
+                    value = f'"{exe_path}"'
+                winreg.SetValueEx(key, "Larj", 0, winreg.REG_SZ, value)
+                self.logger.info("Autostart enabled")
+            else:
+                try:
+                    winreg.DeleteValue(key, "Larj")
+                    self.logger.info("Autostart disabled")
+                except FileNotFoundError:
+                    pass
+            
+            winreg.CloseKey(key)
+        except Exception as e:
+            self.logger.error(f"Failed to set autostart: {e}")
 
     def closeEvent(self, event):
         """Handle close event - stop mouse listener"""
