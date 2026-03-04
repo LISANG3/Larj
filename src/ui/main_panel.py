@@ -370,6 +370,7 @@ class MainPanel(QWidget):
         self.settings_button.setFixedSize(46, 46)
         self.settings_button.setCursor(Qt.PointingHandCursor)
         self.settings_button.setToolTip("设置")
+        self.settings_button.setAccessibleName("设置")
         self.settings_button.clicked.connect(self._on_settings_clicked)
         header_layout.addWidget(self.settings_button)
         layout.addLayout(header_layout)
@@ -399,7 +400,7 @@ class MainPanel(QWidget):
 
         self.app_grid_layout.addWidget(app_scroll)
 
-        self.add_app_button = QPushButton("＋ 添加应用")
+        self.add_app_button = QPushButton("+ 添加应用")
         self.add_app_button.setStyleSheet(ModernStyle.ADD_BUTTON_STYLE)
         self.add_app_button.setMinimumHeight(46)
         self.add_app_button.setCursor(Qt.PointingHandCursor)
@@ -1351,6 +1352,7 @@ class MainPanel(QWidget):
                         scaled = None
                 if scaled is not None:
                     painter.drawPixmap(0, 0, scaled)
+                    # Subtle border: slate-400 at ~25% opacity
                     painter.setPen(QPen(QColor(148, 163, 184, 64), 1))
                     painter.setBrush(Qt.NoBrush)
                     painter.drawRoundedRect(self.rect().adjusted(0, 0, -1, -1), 18, 18)
@@ -1359,6 +1361,7 @@ class MainPanel(QWidget):
 
         color = QColor(bg_color)
         painter.setBrush(QBrush(color))
+        # Subtle border: slate-400 at ~25% opacity
         painter.setPen(QPen(QColor(148, 163, 184, 64), 1))
         painter.drawRoundedRect(self.rect().adjusted(0, 0, -1, -1), 18, 18)
 
