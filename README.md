@@ -55,6 +55,24 @@ python main.py
 launch.bat
 ```
 
+### 打包为可执行文件
+
+如需打包为独立的 `.exe` 文件：
+
+```bash
+# 安装打包工具
+pip install pyinstaller
+
+# 执行打包
+build.bat
+# 或手动执行
+pyinstaller larj.spec --clean
+```
+
+打包完成后，可执行文件位于 `dist/Larj.exe`。
+
+**注意**：打包后的程序需要 `everything/` 目录中的文件才能使用搜索功能。
+
 ## 使用方法
 
 ### 触发面板
