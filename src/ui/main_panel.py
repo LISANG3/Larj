@@ -15,9 +15,9 @@ from PyQt5.QtWidgets import (
     QScrollArea, QLabel, QGridLayout, QListWidget, QListWidgetItem,
     QStackedWidget, QFrame, QDialog, QDialogButtonBox, QFormLayout,
     QCheckBox, QSpinBox, QFileDialog, QMessageBox, QGraphicsDropShadowEffect,
-    QMenu, QAction, QInputDialog
+    QMenu, QAction, QInputDialog, QColorDialog, QComboBox, QToolButton
 )
-from PyQt5.QtCore import Qt, pyqtSignal, QTimer, QMimeData, QPoint
+from PyQt5.QtCore import Qt, pyqtSignal, QTimer, QMimeData, QPoint, QSize
 from PyQt5.QtGui import QIcon, QPixmap, QFont, QColor, QPalette, QLinearGradient, QBrush, QPainter, QPen, QDrag
 from pynput import mouse
 from src.core.hotkey_listener import detect_hotkey, DEFAULT_TRIGGER_KEY
@@ -77,231 +77,246 @@ def extract_icon_from_file(file_path: str, size: int = 48) -> QIcon:
 
 
 class ModernStyle:
+    # ── Accent color tokens (can be overridden at runtime) ─────────
+    ACCENT = "#6366f1"          # Indigo-500
+    ACCENT_HOVER = "#4f46e5"    # Indigo-600
+    ACCENT_LIGHT = "#eef2ff"    # Indigo-50
+    ACCENT_MUTED = "#a5b4fc"    # Indigo-300
+
     MODERN_STYLE = """
     QWidget#mainPanel {
-        background: qlineargradient(
-            x1: 0, y1: 0, x2: 0, y2: 1,
-            stop: 0 #f8fafc,
-            stop: 1 #f1f5f9
-        );
-        border-radius: 16px;
-        border: 1px solid #e2e8f0;
+        border-radius: 18px;
+        border: 1px solid rgba(148, 163, 184, 0.25);
     }
-    
+
     QLineEdit#searchBox {
-        padding: 14px 20px;
-        font-size: 15px;
-        font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
-        border: 2px solid #e2e8f0;
-        border-radius: 12px;
-        background: #ffffff;
-        color: #1e293b;
-        selection-background-color: #3b82f6;
+        padding: 14px 18px 14px 42px;
+        font-size: 14px;
+        font-family: "Segoe UI Variable", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+        border: 1.5px solid rgba(148, 163, 184, 0.3);
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.85);
+        color: #0f172a;
+        selection-background-color: #6366f1;
     }
-    
+
     QLineEdit#searchBox:focus {
-        border-color: #3b82f6;
+        border-color: #6366f1;
         background: #ffffff;
     }
-    
+
     QLineEdit#searchBox::placeholder {
         color: #94a3b8;
     }
-    
+
     QPushButton#settingsBtn {
-        padding: 10px 20px;
-        font-size: 13px;
-        font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
-        font-weight: 500;
+        padding: 0px;
+        font-size: 18px;
         border: none;
-        border-radius: 10px;
-        background: #f1f5f9;
-        color: #475569;
+        border-radius: 12px;
+        background: rgba(241, 245, 249, 0.8);
+        color: #64748b;
     }
-    
+
     QPushButton#settingsBtn:hover {
-        background: #e2e8f0;
-        color: #1e293b;
+        background: #eef2ff;
+        color: #6366f1;
     }
-    
+
     QPushButton#settingsBtn:pressed {
-        background: #cbd5e1;
+        background: #e0e7ff;
     }
-    
+
     QScrollArea {
         border: none;
         background: transparent;
     }
-    
+
     QScrollBar:vertical {
         background: transparent;
-        width: 8px;
-        margin: 4px 0;
-        border-radius: 4px;
+        width: 5px;
+        margin: 6px 1px;
+        border-radius: 2px;
     }
-    
+
     QScrollBar::handle:vertical {
-        background: #cbd5e1;
-        border-radius: 4px;
-        min-height: 30px;
+        background: rgba(148, 163, 184, 0.4);
+        border-radius: 2px;
+        min-height: 36px;
     }
-    
+
     QScrollBar::handle:vertical:hover {
-        background: #94a3b8;
+        background: rgba(100, 116, 139, 0.55);
     }
-    
+
     QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
         height: 0;
     }
-    
+
     QListWidget {
         border: none;
         background: transparent;
         outline: none;
     }
-    
+
     QListWidget::item {
-        padding: 12px 16px;
+        padding: 10px 14px;
         border-radius: 10px;
         margin: 2px 4px;
         background: transparent;
         color: #334155;
+        font-family: "Segoe UI Variable", "Microsoft YaHei UI", sans-serif;
+        font-size: 13px;
     }
-    
+
     QListWidget::item:hover {
-        background: #f1f5f9;
+        background: rgba(99, 102, 241, 0.06);
     }
-    
+
     QListWidget::item:selected {
-        background: #3b82f6;
+        background: #6366f1;
         color: #ffffff;
     }
-    
+
     QLabel#memoryLabel {
         color: #94a3b8;
-        font-size: 11px;
-        font-family: "Segoe UI", sans-serif;
-        padding: 4px 8px;
-        background: #f8fafc;
-        border-radius: 6px;
+        font-size: 10px;
+        font-family: "Segoe UI Variable", "Microsoft YaHei UI", sans-serif;
+        padding: 3px 10px;
+        background: rgba(241, 245, 249, 0.6);
+        border-radius: 8px;
+    }
+
+    QLabel#hintLabel {
+        color: #a5b4fc;
+        font-size: 10px;
+        font-family: "Segoe UI Variable", "Microsoft YaHei UI", sans-serif;
+        padding: 3px 0px;
     }
     """
-    
+
     APP_BUTTON_STYLE = """
-    QPushButton {
-        font-size: 12px;
-        font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+    QToolButton {
+        font-size: 11px;
+        font-family: "Segoe UI Variable", "Microsoft YaHei UI", "PingFang SC", sans-serif;
         font-weight: 500;
         border: none;
         border-radius: 12px;
+        background: rgba(255, 255, 255, 0.92);
+        color: #475569;
+        padding: 12px 8px 8px 8px;
+        margin: 4px;
+    }
+
+    QToolButton:hover {
         background: #ffffff;
-        color: #334155;
+        border: 2px solid #6366f1;
+        color: #4f46e5;
+        padding: 10px 6px 6px 6px;
     }
-    
-    QPushButton:hover {
-        background: #f8fafc;
-        border: 2px solid #3b82f6;
-    }
-    
-    QPushButton:pressed {
-        background: #f1f5f9;
+
+    QToolButton:pressed {
+        background: #eef2ff;
+        border: 2px solid #818cf8;
+        color: #4338ca;
     }
     """
-    
+
     ADD_BUTTON_STYLE = """
     QPushButton {
-        padding: 16px;
-        font-size: 13px;
-        font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+        padding: 14px;
+        font-size: 12px;
+        font-family: "Segoe UI Variable", "Microsoft YaHei UI", "PingFang SC", sans-serif;
         font-weight: 500;
-        border: 2px dashed #cbd5e1;
-        border-radius: 12px;
-        background: transparent;
-        color: #64748b;
+        border: 1.5px dashed rgba(165, 180, 252, 0.5);
+        border-radius: 14px;
+        background: rgba(238, 242, 255, 0.35);
+        color: #818cf8;
     }
-    
+
     QPushButton:hover {
-        background: #f8fafc;
-        border-color: #3b82f6;
-        color: #3b82f6;
+        background: rgba(238, 242, 255, 0.7);
+        border-color: #6366f1;
+        color: #6366f1;
     }
     """
-    
+
     DIALOG_STYLE = """
     QDialog {
         background: #ffffff;
-        border-radius: 16px;
+        border-radius: 18px;
     }
-    
+
     QLabel {
-        font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+        font-family: "Segoe UI Variable", "Microsoft YaHei UI", "PingFang SC", sans-serif;
         font-size: 13px;
         color: #334155;
     }
-    
+
     QLineEdit {
         padding: 10px 14px;
         font-size: 13px;
-        border: 2px solid #e2e8f0;
-        border-radius: 8px;
+        border: 1.5px solid #e2e8f0;
+        border-radius: 10px;
         background: #f8fafc;
-        color: #1e293b;
+        color: #0f172a;
     }
-    
+
     QLineEdit:focus {
-        border-color: #3b82f6;
+        border-color: #6366f1;
         background: #ffffff;
     }
-    
+
     QCheckBox {
-        font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+        font-family: "Segoe UI Variable", "Microsoft YaHei UI", "PingFang SC", sans-serif;
         font-size: 13px;
         color: #334155;
         spacing: 8px;
     }
-    
+
     QCheckBox::indicator {
         width: 18px;
         height: 18px;
-        border-radius: 4px;
-        border: 2px solid #cbd5e1;
+        border-radius: 5px;
+        border: 1.5px solid #cbd5e1;
         background: #ffffff;
     }
-    
+
     QCheckBox::indicator:checked {
-        background: #3b82f6;
-        border-color: #3b82f6;
+        background: #6366f1;
+        border-color: #6366f1;
     }
-    
+
     QSpinBox {
         padding: 8px 12px;
         font-size: 13px;
-        border: 2px solid #e2e8f0;
-        border-radius: 8px;
+        border: 1.5px solid #e2e8f0;
+        border-radius: 10px;
         background: #f8fafc;
-        color: #1e293b;
+        color: #0f172a;
     }
-    
+
     QSpinBox:focus {
-        border-color: #3b82f6;
+        border-color: #6366f1;
     }
-    
+
     QPushButton {
         padding: 10px 20px;
         font-size: 13px;
-        font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+        font-family: "Segoe UI Variable", "Microsoft YaHei UI", "PingFang SC", sans-serif;
         font-weight: 500;
         border: none;
-        border-radius: 8px;
+        border-radius: 10px;
     }
-    
+
     QPushButton#detectBtn {
         background: #f1f5f9;
         color: #475569;
     }
-    
+
     QPushButton#detectBtn:hover {
-        background: #e2e8f0;
+        background: #eef2ff;
+        color: #6366f1;
     }
     """
 
@@ -325,6 +340,7 @@ class MainPanel(QWidget):
         self.plugin_system = plugin_system
         self._settings_dialog = None
         self._mouse_listener = None
+        self._bg_pixmap_cache = None  # ((path, width, height), scaled_pixmap)
         
         self._setup_ui()
         self._connect_signals()
@@ -336,63 +352,71 @@ class MainPanel(QWidget):
     def _setup_ui(self):
         """Setup the user interface"""
         self.setObjectName("mainPanel")
-        self.setAutoFillBackground(True)
-        
+        self.setAttribute(Qt.WA_StyledBackground, True)
+
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 16)
-        layout.setSpacing(16)
-        
+        layout.setContentsMargins(20, 18, 20, 12)
+        layout.setSpacing(14)
+
+        # ── Header: search box + settings gear ────────────────────────
         header_layout = QHBoxLayout()
-        header_layout.setSpacing(12)
-        
+        header_layout.setSpacing(10)
+
+        # Search box with search icon drawn via paintEvent overlay
         self.search_box = QLineEdit()
         self.search_box.setObjectName("searchBox")
-        self.search_box.setPlaceholderText("搜索文件或输入命令...")
-        self.search_box.setMinimumHeight(48)
+        self.search_box.setPlaceholderText("🔍  搜索文件或输入命令…")
+        self.search_box.setMinimumHeight(46)
         header_layout.addWidget(self.search_box, 1)
 
-        self.settings_button = QPushButton("设置")
+        self.settings_button = QPushButton("⚙")
         self.settings_button.setObjectName("settingsBtn")
-        self.settings_button.setFixedSize(80, 44)
+        self.settings_button.setFixedSize(46, 46)
+        self.settings_button.setCursor(Qt.PointingHandCursor)
+        self.settings_button.setToolTip("设置")
+        self.settings_button.setAccessibleName("设置")
         self.settings_button.clicked.connect(self._on_settings_clicked)
         header_layout.addWidget(self.settings_button)
         layout.addLayout(header_layout)
-        
+
+        # ── Stacked pages: app grid / search results ──────────────────
         self.stacked_widget = QStackedWidget()
-        
+
+        # -- App grid page --
         self.app_grid_widget = QWidget()
         self.app_grid_widget.setStyleSheet("background: transparent;")
         self.app_grid_layout = QVBoxLayout(self.app_grid_widget)
         self.app_grid_layout.setContentsMargins(0, 0, 0, 0)
-        self.app_grid_layout.setSpacing(12)
-        
+        self.app_grid_layout.setSpacing(10)
+
         app_scroll = QScrollArea()
         app_scroll.setWidgetResizable(True)
         app_scroll.setFrameShape(QFrame.NoFrame)
         app_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         app_scroll.setStyleSheet("background: transparent;")
-        
+
         app_container = QWidget()
         app_container.setStyleSheet("background: transparent;")
         self.app_grid = QGridLayout(app_container)
-        self.app_grid.setSpacing(12)
-        self.app_grid.setContentsMargins(4, 4, 4, 4)
+        self.app_grid.setSpacing(10)
+        self.app_grid.setContentsMargins(2, 2, 2, 2)
         app_scroll.setWidget(app_container)
-        
+
         self.app_grid_layout.addWidget(app_scroll)
-        
+
         self.add_app_button = QPushButton("+ 添加应用")
         self.add_app_button.setStyleSheet(ModernStyle.ADD_BUTTON_STYLE)
-        self.add_app_button.setMinimumHeight(52)
+        self.add_app_button.setMinimumHeight(46)
         self.add_app_button.setCursor(Qt.PointingHandCursor)
         self.add_app_button.clicked.connect(self._on_add_app_clicked)
         self.app_grid_layout.addWidget(self.add_app_button)
-        
+
+        # -- Search results page --
         self.search_results_widget = QWidget()
         self.search_results_widget.setStyleSheet("background: transparent;")
         search_results_layout = QVBoxLayout(self.search_results_widget)
         search_results_layout.setContentsMargins(0, 0, 0, 0)
-        
+
         self.search_results = QListWidget()
         self.search_results.setStyleSheet("""
             QListWidget {
@@ -401,32 +425,37 @@ class MainPanel(QWidget):
                 outline: none;
             }
             QListWidget::item {
-                padding: 14px 18px;
+                padding: 10px 14px;
                 border-radius: 10px;
-                margin: 3px 4px;
+                margin: 2px 4px;
                 background: transparent;
                 color: #334155;
-                font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+                font-family: "Segoe UI Variable", "Microsoft YaHei UI", sans-serif;
                 font-size: 13px;
             }
             QListWidget::item:hover {
-                background: #f1f5f9;
+                background: rgba(99, 102, 241, 0.06);
             }
             QListWidget::item:selected {
-                background: #3b82f6;
+                background: #6366f1;
                 color: #ffffff;
             }
         """)
-        self.search_results.setSpacing(2)
+        self.search_results.setSpacing(1)
         self.search_results.itemDoubleClicked.connect(self._on_search_result_clicked)
         search_results_layout.addWidget(self.search_results)
-        
+
         self.stacked_widget.addWidget(self.app_grid_widget)
         self.stacked_widget.addWidget(self.search_results_widget)
-        
+
         layout.addWidget(self.stacked_widget)
-        
+
+        # ── Footer ────────────────────────────────────────────────────
         footer_layout = QHBoxLayout()
+        footer_layout.setContentsMargins(4, 0, 4, 0)
+        self.hint_label = QLabel("Esc 隐藏  ·  双击打开文件")
+        self.hint_label.setObjectName("hintLabel")
+        footer_layout.addWidget(self.hint_label)
         footer_layout.addStretch()
         self.memory_label = QLabel(f"内存: {self.MEMORY_PLACEHOLDER}")
         self.memory_label.setObjectName("memoryLabel")
@@ -437,14 +466,14 @@ class MainPanel(QWidget):
         self._memory_timer.timeout.connect(self._update_memory_usage)
         self._memory_timer.start(self.MEMORY_UPDATE_INTERVAL_MS)
         self._update_memory_usage()
-        
+
         self.setStyleSheet(ModernStyle.MODERN_STYLE)
-        
+
         shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(30)
+        shadow.setBlurRadius(40)
         shadow.setXOffset(0)
-        shadow.setYOffset(8)
-        shadow.setColor(QColor(0, 0, 0, 40))
+        shadow.setYOffset(10)
+        shadow.setColor(QColor(0, 0, 0, 50))
         self.setGraphicsEffect(shadow)
     
     def _connect_signals(self):
@@ -473,9 +502,10 @@ class MainPanel(QWidget):
             all_items = list(apps)
             
             if self.plugin_system:
-                for plugin_name, plugin in self.plugin_system.plugins.items():
+                for plugin_id, plugin in self.plugin_system.plugins.items():
+                    metadata = plugin.get_metadata()
                     all_items.append({
-                        "name": plugin.get_info().get("name", plugin_name),
+                        "name": metadata.get("name", plugin_id),
                         "type": "plugin",
                         "plugin_instance": plugin
                     })
@@ -496,23 +526,60 @@ class MainPanel(QWidget):
         except Exception as e:
             self.logger.error(f"Failed to load apps: {e}", exc_info=True)
     
-    def _create_plugin_button(self, plugin_item: dict) -> QPushButton:
-        """Create a button for a plugin"""
+    def _create_plugin_button(self, plugin_item: dict) -> QToolButton:
+        """Create a button for a plugin with icon on top and name below"""
         plugin = plugin_item.get("plugin_instance")
-        plugin_info = plugin.get_info()
-        
-        button = QPushButton(plugin_info.get("name", "Plugin"))
-        button.setFixedSize(130, 90)
+        metadata = plugin.get_metadata()
+
+        button = QToolButton()
+        button.setText(metadata.get("name", "Plugin"))
+        button.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
+        button.setFixedSize(100, 100)
         button.setStyleSheet(ModernStyle.APP_BUTTON_STYLE)
         button.setCursor(Qt.PointingHandCursor)
-        
+
         button.setProperty("plugin_data", plugin_item)
         button.clicked.connect(lambda: self._on_plugin_clicked(plugin))
-        
-        from PyQt5.QtGui import QFont
-        button.setFont(QFont("Segoe UI", 11, QFont.Bold))
-        
+
+        font = QFont("Segoe UI Variable", 10, QFont.Normal)
+        button.setFont(font)
+
+        default_icon = self._create_default_plugin_icon(metadata.get("name", "Plugin"))
+        button.setIcon(default_icon)
+        button.setIconSize(QSize(40, 40))
+
         return button
+
+    def _create_default_plugin_icon(self, name: str) -> QIcon:
+        """Create a default icon for plugins based on name"""
+        colors = [
+            QColor(99, 102, 241),
+            QColor(139, 92, 246),
+            QColor(59, 130, 246),
+            QColor(16, 185, 129),
+            QColor(245, 158, 11),
+        ]
+        color = colors[hash(name) % len(colors)]
+        
+        pixmap = QPixmap(64, 64)
+        pixmap.fill(Qt.transparent)
+        
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing)
+        
+        painter.setBrush(QBrush(color))
+        painter.setPen(Qt.NoPen)
+        painter.drawRoundedRect(4, 4, 56, 56, 12, 12)
+        
+        painter.setPen(QPen(QColor(255, 255, 255), 2.5))
+        font = painter.font()
+        font.setPointSize(24)
+        font.setBold(True)
+        painter.setFont(font)
+        painter.drawText(pixmap.rect(), 0x0084, name[0].upper() if name else "P")
+        painter.end()
+        
+        return QIcon(pixmap)
     
     def _on_plugin_clicked(self, plugin):
         """Handle plugin button click"""
@@ -522,10 +589,12 @@ class MainPanel(QWidget):
         except Exception as e:
             self.logger.error(f"Failed to handle plugin click: {e}", exc_info=True)
     
-    def _create_app_button(self, app: dict) -> QPushButton:
-        """Create a button for an app"""
-        button = QPushButton(app.get("name", "Unknown"))
-        button.setFixedSize(130, 90)
+    def _create_app_button(self, app: dict) -> QToolButton:
+        """Create a button for an app with icon on top and name below"""
+        button = QToolButton()
+        button.setText(app.get("name", "Unknown"))
+        button.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
+        button.setFixedSize(100, 100)
         button.setStyleSheet(ModernStyle.APP_BUTTON_STYLE)
         button.setCursor(Qt.PointingHandCursor)
         
@@ -535,7 +604,14 @@ class MainPanel(QWidget):
         icon = extract_icon_from_file(app.get("path", ""))
         if not icon.isNull():
             button.setIcon(icon)
-            button.setIconSize(button.size() * 0.4)
+            button.setIconSize(QSize(40, 40))
+        else:
+            default_icon = self._create_default_app_icon(app.get("name", "App"))
+            button.setIcon(default_icon)
+            button.setIconSize(QSize(40, 40))
+        
+        font = QFont("Segoe UI Variable", 10, QFont.Normal)
+        button.setFont(font)
         
         button.setContextMenuPolicy(Qt.CustomContextMenu)
         button.customContextMenuRequested.connect(lambda pos, b=button, a=app: self._show_app_context_menu(pos, b, a))
@@ -544,6 +620,39 @@ class MainPanel(QWidget):
         button.drag_start_pos = None
         
         return button
+
+    def _create_default_app_icon(self, name: str) -> QIcon:
+        """Create a default icon for apps based on name"""
+        colors = [
+            QColor(99, 102, 241),
+            QColor(139, 92, 246),
+            QColor(59, 130, 246),
+            QColor(16, 185, 129),
+            QColor(245, 158, 11),
+            QColor(239, 68, 68),
+            QColor(236, 72, 153),
+        ]
+        color = colors[hash(name) % len(colors)]
+        
+        pixmap = QPixmap(64, 64)
+        pixmap.fill(Qt.transparent)
+        
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing)
+        
+        painter.setBrush(QBrush(color))
+        painter.setPen(Qt.NoPen)
+        painter.drawRoundedRect(4, 4, 56, 56, 12, 12)
+        
+        painter.setPen(QPen(QColor(255, 255, 255), 2.5))
+        font = painter.font()
+        font.setPointSize(24)
+        font.setBold(True)
+        painter.setFont(font)
+        painter.drawText(pixmap.rect(), 0x0084, name[0].upper() if name else "A")
+        painter.end()
+        
+        return QIcon(pixmap)
     
     def _show_app_context_menu(self, pos, button, app):
         """Show context menu for app button"""
@@ -551,35 +660,43 @@ class MainPanel(QWidget):
         menu.setStyleSheet("""
             QMenu {
                 background: #ffffff;
-                border: 1px solid #e2e8f0;
-                border-radius: 8px;
-                padding: 4px;
+                border: 1px solid rgba(148, 163, 184, 0.25);
+                border-radius: 10px;
+                padding: 6px;
             }
             QMenu::item {
-                padding: 8px 16px;
-                border-radius: 4px;
+                padding: 8px 20px 8px 14px;
+                border-radius: 6px;
                 color: #334155;
+                font-family: "Segoe UI Variable", "Microsoft YaHei UI", sans-serif;
+                font-size: 13px;
             }
             QMenu::item:selected {
-                background: #f1f5f9;
+                background: rgba(99, 102, 241, 0.08);
+                color: #4f46e5;
             }
-            QMenu::item:pressed {
-                background: #e2e8f0;
+            QMenu::separator {
+                height: 1px;
+                background: #f1f5f9;
+                margin: 4px 8px;
             }
         """)
         
-        edit_action = menu.addAction("编辑")
+        edit_action = menu.addAction("✏️  编辑")
         edit_action.triggered.connect(lambda: self._edit_app(app))
+
+        rename_action = menu.addAction("📝  重命名")
+        rename_action.triggered.connect(lambda: self._rename_app(app))
         
-        delete_action = menu.addAction("删除")
+        delete_action = menu.addAction("🗑️  删除")
         delete_action.triggered.connect(lambda: self._delete_app(app))
         
         menu.addSeparator()
         
-        move_up_action = menu.addAction("上移")
+        move_up_action = menu.addAction("⬆  上移")
         move_up_action.triggered.connect(lambda: self._move_app(app, -1))
         
-        move_down_action = menu.addAction("下移")
+        move_down_action = menu.addAction("⬇  下移")
         move_down_action.triggered.connect(lambda: self._move_app(app, 1))
         
         menu.exec_(button.mapToGlobal(pos))
@@ -589,7 +706,7 @@ class MainPanel(QWidget):
         dialog = QDialog(self)
         dialog.setWindowTitle("编辑应用")
         dialog.setModal(True)
-        dialog.setMinimumWidth(350)
+        dialog.setMinimumWidth(380)
         dialog.setStyleSheet(ModernStyle.DIALOG_STYLE)
         
         layout = QVBoxLayout(dialog)
@@ -629,7 +746,18 @@ class MainPanel(QWidget):
                 updated_app["args"] = new_args
                 self.application_manager.update_app(app.get("id"), updated_app)
                 self._load_apps()
-    
+
+    def _rename_app(self, app: dict):
+        """Quickly rename an application icon"""
+        new_name, ok = QInputDialog.getText(
+            self, "重命名", "请输入新名称:", text=app.get("name", "")
+        )
+        if ok and new_name.strip():
+            updated_app = app.copy()
+            updated_app["name"] = new_name.strip()
+            self.application_manager.update_app(app.get("id"), updated_app)
+            self._load_apps()
+
     def _delete_app(self, app: dict):
         """Delete application"""
         reply = QMessageBox.question(
@@ -680,22 +808,25 @@ class MainPanel(QWidget):
             menu.setStyleSheet("""
                 QMenu {
                     background: #ffffff;
-                    border: 1px solid #e2e8f0;
-                    border-radius: 8px;
-                    padding: 4px;
+                    border: 1px solid rgba(148, 163, 184, 0.25);
+                    border-radius: 10px;
+                    padding: 6px;
                 }
                 QMenu::item {
-                    padding: 8px 16px;
-                    border-radius: 4px;
+                    padding: 8px 20px 8px 14px;
+                    border-radius: 6px;
                     color: #334155;
+                    font-family: "Segoe UI Variable", "Microsoft YaHei UI", sans-serif;
+                    font-size: 13px;
                 }
                 QMenu::item:selected {
-                    background: #f1f5f9;
+                    background: rgba(99, 102, 241, 0.08);
+                    color: #4f46e5;
                 }
             """)
             
-            add_app_action = menu.addAction("添加应用程序")
-            add_folder_action = menu.addAction("添加文件夹")
+            add_app_action = menu.addAction("📦  添加应用程序")
+            add_folder_action = menu.addAction("📂  添加文件夹")
             
             action = menu.exec_(self.add_app_button.mapToGlobal(QPoint(0, -50)))
             
@@ -739,7 +870,7 @@ class MainPanel(QWidget):
         self._settings_dialog = dialog
         dialog.setWindowTitle("设置")
         dialog.setModal(True)
-        dialog.setMinimumSize(500, 500)
+        dialog.setMinimumSize(520, 520)
         dialog.setStyleSheet(ModernStyle.DIALOG_STYLE)
         
         main_layout = QVBoxLayout(dialog)
@@ -753,20 +884,24 @@ class MainPanel(QWidget):
                 background: #ffffff;
             }
             QTabBar::tab {
-                padding: 12px 24px;
+                padding: 12px 28px;
                 margin: 0;
                 background: #f8fafc;
                 color: #64748b;
                 border: none;
                 border-bottom: 2px solid transparent;
+                font-family: "Segoe UI Variable", "Microsoft YaHei UI", sans-serif;
+                font-size: 13px;
+                font-weight: 500;
             }
             QTabBar::tab:selected {
                 background: #ffffff;
-                color: #3b82f6;
-                border-bottom: 2px solid #3b82f6;
+                color: #6366f1;
+                border-bottom: 2.5px solid #6366f1;
             }
             QTabBar::tab:hover:!selected {
-                background: #f1f5f9;
+                background: #eef2ff;
+                color: #6366f1;
             }
         """)
         
@@ -820,6 +955,10 @@ class MainPanel(QWidget):
         max_results_spinbox.setMinimumWidth(100)
         form_layout.addRow("搜索结果上限", max_results_spinbox)
         
+        autostart_checkbox = QCheckBox()
+        autostart_checkbox.setChecked(self._is_autostart_enabled())
+        form_layout.addRow("开机自启动", autostart_checkbox)
+        
         general_layout.addWidget(form_widget)
         general_layout.addStretch()
         
@@ -831,18 +970,19 @@ class MainPanel(QWidget):
         plugin_layout.setContentsMargins(24, 24, 24, 24)
         
         plugin_settings_widgets = {}
+        plugin_enable_checkboxes = {}
         
-        if self.plugin_system and self.plugin_system.plugins:
-            for plugin_name, plugin in self.plugin_system.plugins.items():
-                plugin_info = plugin.get_info() if hasattr(plugin, 'get_info') else {}
-                settings = plugin.get_settings() if hasattr(plugin, 'get_settings') else {}
-                
+        discovered = self.plugin_system.get_discovered_plugins() if self.plugin_system else {}
+        enabled_plugins = self.config_manager.get("plugin.enabled_plugins", [])
+        
+        if discovered:
+            for plugin_id, metadata in discovered.items():
                 plugin_group = QWidget()
                 plugin_group.setStyleSheet("""
                     QWidget {
                         background: #f8fafc;
-                        border-radius: 12px;
-                        border: 1px solid #e2e8f0;
+                        border-radius: 14px;
+                        border: 1px solid rgba(148, 163, 184, 0.2);
                     }
                 """)
                 group_layout = QVBoxLayout(plugin_group)
@@ -851,24 +991,34 @@ class MainPanel(QWidget):
                 
                 header_layout = QHBoxLayout()
                 
-                name_label = QLabel(plugin_info.get("name", plugin_name))
-                name_label.setStyleSheet("font-size: 15px; font-weight: 600; color: #1e293b; background: transparent;")
+                enable_checkbox = QCheckBox()
+                enable_checkbox.setChecked(plugin_id in enabled_plugins)
+                enable_checkbox.setStyleSheet("background: transparent;")
+                header_layout.addWidget(enable_checkbox)
+                plugin_enable_checkboxes[plugin_id] = enable_checkbox
+                
+                name_label = QLabel(metadata.get("name", plugin_id))
+                name_label.setStyleSheet("font-size: 14px; font-weight: 600; color: #0f172a; background: transparent;")
                 header_layout.addWidget(name_label)
                 
-                version_label = QLabel(f"v{plugin_info.get('version', '1.0')}")
-                version_label.setStyleSheet("font-size: 12px; color: #94a3b8; background: transparent;")
+                version_label = QLabel(f"v{metadata.get('version', '1.0')}")
+                version_label.setStyleSheet("font-size: 11px; color: #a5b4fc; background: transparent; font-weight: 500;")
                 header_layout.addWidget(version_label)
                 header_layout.addStretch()
                 
                 group_layout.addLayout(header_layout)
                 
-                desc_label = QLabel(plugin_info.get("description", ""))
+                desc_label = QLabel(metadata.get("description", ""))
                 desc_label.setStyleSheet("font-size: 12px; color: #64748b; background: transparent;")
                 desc_label.setWordWrap(True)
                 group_layout.addWidget(desc_label)
                 
-                if settings:
-                    plugin_settings_widgets[plugin_name] = {}
+                config_schema = metadata.get("config_schema", {})
+                if config_schema:
+                    plugin_settings_widgets[plugin_id] = {}
+                    
+                    # Load saved config for this plugin
+                    saved_config = self.plugin_system.get_plugin_config(plugin_id) if self.plugin_system else {}
                     
                     settings_form = QWidget()
                     settings_form.setStyleSheet("background: transparent;")
@@ -877,27 +1027,23 @@ class MainPanel(QWidget):
                     settings_layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
                     settings_layout.setContentsMargins(0, 8, 0, 0)
                     
-                    for setting_key, setting_config in settings.items():
-                        setting_type = setting_config.get("type", "text")
-                        label = setting_config.get("label", setting_key)
-                        default_value = setting_config.get("default", "")
+                    for setting_key, schema in config_schema.items():
+                        setting_type = schema.get("type", "str")
+                        label = schema.get("desc", setting_key)
+                        default_value = schema.get("default", "")
                         
-                        saved_value = self.config_manager.get(f"plugins.{plugin_name}.{setting_key}", default_value)
+                        saved_value = saved_config.get(setting_key, default_value)
                         
-                        if setting_type == "password":
-                            widget = QLineEdit()
+                        widget = QLineEdit()
+                        # Use password mode if schema declares secret: true
+                        if schema.get("secret", False):
                             widget.setEchoMode(QLineEdit.Password)
-                            widget.setText(str(saved_value))
-                            widget.setMinimumWidth(200)
-                            widget.setStyleSheet("background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 10px;")
-                        else:
-                            widget = QLineEdit()
-                            widget.setText(str(saved_value))
-                            widget.setMinimumWidth(200)
-                            widget.setStyleSheet("background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 10px;")
+                        widget.setText(str(saved_value))
+                        widget.setMinimumWidth(200)
+                        widget.setStyleSheet("background: #ffffff; border: 1px solid rgba(148, 163, 184, 0.25); border-radius: 8px; padding: 6px 10px;")
                         
                         settings_layout.addRow(label + ":", widget)
-                        plugin_settings_widgets[plugin_name][setting_key] = widget
+                        plugin_settings_widgets[plugin_id][setting_key] = widget
                     
                     group_layout.addWidget(settings_form)
                 
@@ -916,45 +1062,156 @@ class MainPanel(QWidget):
         scroll_area.setStyleSheet("QScrollArea { border: none; background: #ffffff; }")
         
         tab_widget.addTab(scroll_area, "插件管理")
-        
+
+        # ── Appearance tab ────────────────────────────────────────────────────
+        appearance_widget = QWidget()
+        appearance_layout = QVBoxLayout(appearance_widget)
+        appearance_layout.setSpacing(20)
+        appearance_layout.setContentsMargins(24, 24, 24, 24)
+
+        # -- Background type ---
+        bg_type_label = QLabel("背景类型")
+        bg_type_label.setStyleSheet("font-size: 13px; font-weight: 600; color: #0f172a;")
+        appearance_layout.addWidget(bg_type_label)
+
+        bg_type_combo = QComboBox()
+        bg_type_combo.addItem("纯色", "solid")
+        bg_type_combo.addItem("图片", "image")
+        current_bg_type = self.config_manager.get("appearance.background_type", "solid")
+        for idx in range(bg_type_combo.count()):
+            if bg_type_combo.itemData(idx) == current_bg_type:
+                bg_type_combo.setCurrentIndex(idx)
+                break
+        bg_type_combo.setStyleSheet("""
+            QComboBox {
+                padding: 8px 12px; font-size: 13px; border: 1.5px solid #e2e8f0;
+                border-radius: 10px; background: #f8fafc; color: #0f172a;
+            }
+            QComboBox:focus { border-color: #6366f1; }
+            QComboBox::drop-down { border: none; }
+        """)
+        appearance_layout.addWidget(bg_type_combo)
+
+        def _make_color_btn(config_key: str, default: str) -> QPushButton:
+            color = self.config_manager.get(config_key, default)
+            btn = QPushButton()
+            btn.setFixedSize(100, 32)
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.setStyleSheet(f"background: {color}; border: 1.5px solid rgba(148, 163, 184, 0.3); border-radius: 8px;")
+            btn.setProperty("color_value", color)
+
+            def pick(checked=False, b=btn, key=config_key):
+                current = QColor(b.property("color_value"))
+                chosen = QColorDialog.getColor(current, dialog, "选择颜色")
+                if chosen.isValid():
+                    hex_color = chosen.name()
+                    b.setProperty("color_value", hex_color)
+                    b.setStyleSheet(f"background: {hex_color}; border: 1.5px solid rgba(148, 163, 184, 0.3); border-radius: 8px;")
+
+            btn.clicked.connect(pick)
+            return btn
+
+        # -- Solid color --
+        solid_widget = QWidget()
+        solid_layout = QFormLayout(solid_widget)
+        solid_layout.setSpacing(12)
+        solid_layout.setContentsMargins(0, 0, 0, 0)
+        solid_color_btn = _make_color_btn("appearance.background_color", "#f8fafc")
+        solid_layout.addRow("背景颜色:", solid_color_btn)
+        appearance_layout.addWidget(solid_widget)
+
+        # -- Image picker --
+        image_widget = QWidget()
+        image_layout = QHBoxLayout(image_widget)
+        image_layout.setContentsMargins(0, 0, 0, 0)
+        image_layout.setSpacing(8)
+        image_path_input = QLineEdit()
+        image_path_input.setText(self.config_manager.get("appearance.background_image", ""))
+        image_path_input.setReadOnly(True)
+        image_path_input.setPlaceholderText("选择图片文件…")
+        image_path_input.setStyleSheet("padding: 8px 12px; font-size: 13px; border: 1.5px solid #e2e8f0; border-radius: 10px;")
+        browse_btn = QPushButton("浏览")
+        browse_btn.setFixedSize(70, 36)
+        browse_btn.setCursor(Qt.PointingHandCursor)
+        browse_btn.setStyleSheet(
+            "QPushButton { background: #f1f5f9; color: #475569; border: none; border-radius: 10px; font-size: 13px; }"
+            "QPushButton:hover { background: #eef2ff; color: #6366f1; }"
+        )
+
+        def pick_image():
+            path, _ = QFileDialog.getOpenFileName(
+                dialog, "选择背景图片", "",
+                "Images (*.png *.jpg *.jpeg *.bmp *.gif *.webp);;All Files (*)"
+            )
+            if path:
+                image_path_input.setText(path)
+
+        browse_btn.clicked.connect(pick_image)
+        image_layout.addWidget(image_path_input)
+        image_layout.addWidget(browse_btn)
+        appearance_layout.addWidget(image_widget)
+
+        # -- Accent color --
+        accent_label = QLabel("主题强调色")
+        accent_label.setStyleSheet("font-size: 13px; font-weight: 600; color: #0f172a; margin-top: 8px;")
+        appearance_layout.addWidget(accent_label)
+        accent_color_btn = _make_color_btn("appearance.accent_color", "#6366f1")
+        appearance_layout.addWidget(accent_color_btn)
+
+        # Show/hide sub-sections based on bg_type_combo selection
+        def _update_appearance_sections(index=None):
+            selected = bg_type_combo.currentData()
+            solid_widget.setVisible(selected == "solid")
+            image_widget.setVisible(selected == "image")
+
+        bg_type_combo.currentIndexChanged.connect(_update_appearance_sections)
+        _update_appearance_sections()
+
+        appearance_layout.addStretch()
+        tab_widget.addTab(appearance_widget, "外观")
+        # ── end Appearance tab ───────────────────────────────────────────────
+
         main_layout.addWidget(tab_widget)
         
         button_container = QWidget()
-        button_container.setStyleSheet("background: #f8fafc; border-top: 1px solid #e2e8f0;")
+        button_container.setStyleSheet("background: #f8fafc; border-top: 1px solid rgba(148, 163, 184, 0.2);")
         button_layout = QHBoxLayout(button_container)
-        button_layout.setContentsMargins(24, 16, 24, 16)
+        button_layout.setContentsMargins(24, 14, 24, 14)
         button_layout.addStretch()
         
         save_btn = QPushButton("保存")
+        save_btn.setCursor(Qt.PointingHandCursor)
         save_btn.setStyleSheet("""
             QPushButton {
-                background: #3b82f6;
+                background: #6366f1;
                 color: white;
-                padding: 10px 32px;
+                padding: 10px 36px;
                 font-size: 13px;
-                font-weight: 500;
+                font-weight: 600;
                 border: none;
-                border-radius: 8px;
+                border-radius: 10px;
             }
             QPushButton:hover {
-                background: #2563eb;
+                background: #4f46e5;
             }
         """)
         save_btn.clicked.connect(dialog.accept)
         
         cancel_btn = QPushButton("取消")
+        cancel_btn.setCursor(Qt.PointingHandCursor)
         cancel_btn.setStyleSheet("""
             QPushButton {
                 background: #f1f5f9;
                 color: #475569;
-                padding: 10px 32px;
+                padding: 10px 36px;
                 font-size: 13px;
                 font-weight: 500;
                 border: none;
-                border-radius: 8px;
+                border-radius: 10px;
             }
             QPushButton:hover {
-                background: #e2e8f0;
+                background: #eef2ff;
+                color: #6366f1;
             }
         """)
         cancel_btn.clicked.connect(dialog.reject)
@@ -972,15 +1229,42 @@ class MainPanel(QWidget):
                 self.config_manager.set("window.hide_on_focus_loss", hide_on_focus_loss_checkbox.isChecked())
                 self.config_manager.set("search.max_results", max_results_spinbox.value())
                 
-                for plugin_name, widgets in plugin_settings_widgets.items():
-                    if plugin_name in self.plugin_system.plugins:
-                        plugin = self.plugin_system.plugins[plugin_name]
-                        settings = {}
-                        for setting_key, widget in widgets.items():
-                            value = widget.text()
-                            settings[setting_key] = value
-                            self.config_manager.set(f"plugins.{plugin_name}.{setting_key}", value)
-                        plugin.apply_settings(settings)
+                self._set_autostart(autostart_checkbox.isChecked())
+
+                # Save appearance settings
+                self.config_manager.set("appearance.background_type", bg_type_combo.currentData())
+                self.config_manager.set("appearance.background_color", solid_color_btn.property("color_value"))
+                self.config_manager.set("appearance.background_image", image_path_input.text())
+                self.config_manager.set("appearance.accent_color", accent_color_btn.property("color_value"))
+                self.update()  # Repaint main panel with new background
+                
+                # Save plugin enable/disable state
+                new_enabled = []
+                for plugin_id, checkbox in plugin_enable_checkboxes.items():
+                    if checkbox.isChecked():
+                        new_enabled.append(plugin_id)
+                        # Enable plugin if not already loaded
+                        if plugin_id not in self.plugin_system.plugins:
+                            self.plugin_system.load_plugin(plugin_id)
+                    else:
+                        # Disable plugin if currently loaded
+                        if plugin_id in self.plugin_system.plugins:
+                            self.plugin_system.unload_plugin(plugin_id)
+                self.config_manager.set("plugin.enabled_plugins", new_enabled)
+                
+                # Save per-plugin config to config/plugins/[plugin_id].json
+                for plugin_id, widgets in plugin_settings_widgets.items():
+                    settings = {}
+                    for setting_key, widget in widgets.items():
+                        value = widget.text()
+                        settings[setting_key] = value
+                    self.plugin_system.set_plugin_config(plugin_id, settings)
+                    # Apply settings to loaded plugin instance
+                    if plugin_id in self.plugin_system.plugins:
+                        self.plugin_system.plugins[plugin_id].apply_settings(settings)
+                
+                # Reload app grid to reflect plugin enable/disable changes
+                self._load_apps()
         finally:
             self._settings_dialog = None
     
@@ -1064,6 +1348,60 @@ class MainPanel(QWidget):
         self.hide()
         self.clear_search()
 
+    def _is_autostart_enabled(self) -> bool:
+        """Check if autostart is enabled in Windows registry"""
+        try:
+            import winreg
+            key = winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\Run",
+                0,
+                winreg.KEY_READ
+            )
+            try:
+                winreg.QueryValueEx(key, "Larj")
+                winreg.CloseKey(key)
+                return True
+            except FileNotFoundError:
+                winreg.CloseKey(key)
+                return False
+        except Exception as e:
+            self.logger.error(f"Failed to check autostart: {e}")
+            return False
+
+    def _set_autostart(self, enabled: bool):
+        """Enable or disable autostart in Windows registry"""
+        try:
+            import winreg
+            import sys
+            
+            key = winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\Run",
+                0,
+                winreg.KEY_WRITE
+            )
+            
+            if enabled:
+                exe_path = sys.executable
+                if exe_path.endswith("python.exe"):
+                    script_path = os.path.abspath("main.py")
+                    value = f'"{exe_path}" "{script_path}"'
+                else:
+                    value = f'"{exe_path}"'
+                winreg.SetValueEx(key, "Larj", 0, winreg.REG_SZ, value)
+                self.logger.info("Autostart enabled")
+            else:
+                try:
+                    winreg.DeleteValue(key, "Larj")
+                    self.logger.info("Autostart disabled")
+                except FileNotFoundError:
+                    pass
+            
+            winreg.CloseKey(key)
+        except Exception as e:
+            self.logger.error(f"Failed to set autostart: {e}")
+
     def closeEvent(self, event):
         """Handle close event - stop mouse listener"""
         if self._mouse_listener:
@@ -1072,18 +1410,45 @@ class MainPanel(QWidget):
         super().closeEvent(event)
 
     def paintEvent(self, event):
-        """Paint the gradient background"""
+        """Paint the background using configured appearance settings"""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        
-        gradient = QLinearGradient(0, 0, 0, self.height())
-        gradient.setColorAt(0, QColor("#f8fafc"))
-        gradient.setColorAt(1, QColor("#f1f5f9"))
-        
-        painter.setBrush(QBrush(gradient))
-        painter.setPen(QPen(QColor("#e2e8f0"), 1))
-        painter.drawRect(self.rect())
-        
+
+        bg_type = self.config_manager.get("appearance.background_type", "solid")
+        bg_color = self.config_manager.get("appearance.background_color", "#f8fafc")
+
+        if bg_type == "image":
+            image_path = self.config_manager.get("appearance.background_image", "")
+            if image_path and os.path.exists(image_path):
+                cache_key = (image_path, self.size().width(), self.size().height())
+                if self._bg_pixmap_cache is not None and self._bg_pixmap_cache[0] == cache_key:
+                    scaled = self._bg_pixmap_cache[1]
+                else:
+                    pixmap = QPixmap(image_path)
+                    if not pixmap.isNull():
+                        scaled = pixmap.scaled(
+                            self.size(),
+                            Qt.KeepAspectRatioByExpanding,
+                            Qt.SmoothTransformation,
+                        )
+                        self._bg_pixmap_cache = (cache_key, scaled)
+                    else:
+                        scaled = None
+                if scaled is not None:
+                    painter.drawPixmap(0, 0, scaled)
+                    # Subtle border: slate-400 at ~25% opacity
+                    painter.setPen(QPen(QColor(148, 163, 184, 64), 1))
+                    painter.setBrush(Qt.NoBrush)
+                    painter.drawRoundedRect(self.rect().adjusted(0, 0, -1, -1), 18, 18)
+                    super().paintEvent(event)
+                    return
+
+        color = QColor(bg_color)
+        painter.setBrush(QBrush(color))
+        # Subtle border: slate-400 at ~25% opacity
+        painter.setPen(QPen(QColor(148, 163, 184, 64), 1))
+        painter.drawRoundedRect(self.rect().adjusted(0, 0, -1, -1), 18, 18)
+
         super().paintEvent(event)
 
     def focusOutEvent(self, event):

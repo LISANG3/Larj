@@ -16,10 +16,12 @@ Larj 是一个轻量级的 Windows 桌面效率工具，提供快速文件搜索
 - [使用方法](#使用方法)
 - [项目结构](#项目结构)
 - [技术架构](#技术架构)
-- [插件开发](#插件开发)
+- [插件系统](#插件系统)
 - [配置说明](#配置说明)
 - [常见问题](#常见问题)
 - [贡献指南](#贡献指南)
+
+> **插件开发详细指南**: 参见 [PLUGINS.md](PLUGINS.md)
 
 ## 安装
 
@@ -52,6 +54,24 @@ python main.py
 # 或使用启动脚本
 launch.bat
 ```
+
+### 打包为可执行文件
+
+如需打包为独立的 `.exe` 文件：
+
+```bash
+# 安装打包工具
+pip install pyinstaller
+
+# 执行打包
+build.bat
+# 或手动执行
+pyinstaller larj.spec --clean
+```
+
+打包完成后，可执行文件位于 `dist/Larj.exe`。
+
+**注意**：打包后的程序需要 `everything/` 目录中的文件才能使用搜索功能。
 
 ## 使用方法
 
@@ -86,9 +106,9 @@ Larj/
 │   └── Everything.exe    # 主程序 (需下载)
 │
 ├── plugins/              # 插件目录
-│   ├── calculator.py     # 计算器插件
-│   ├── notepad.py        # 记事本插件
-│   └── mtran_server/     # MTranServer 插件（目录化插件）
+│   ├── mtran_server/     # 腾讯翻译插件
+│   │   └── __init__.py
+│   └── ocr/              # OCR 识别插件
 │       └── __init__.py
 │
 ├── src/                  # 源代码
@@ -106,6 +126,7 @@ Larj/
 │
 ├── main.py               # 程序入口
 ├── launch.bat            # Windows 启动脚本
+├── PLUGINS.md            # 插件开发指南
 └── requirements.txt      # Python 依赖
 ```
 
@@ -158,63 +179,51 @@ Larj/
 → 调用 es.exe → 解析 CSV 结果 → 更新界面
 ```
 
-## 插件开发
+## 插件系统
 
-### 创建插件
+Larj 提供可扩展的插件架构，支持自定义功能扩展。
 
-1. 在 `plugins/` 目录创建 `.py` 文件或插件目录（目录内需包含 `__init__.py`）
-2. 继承 `PluginBase` 类
-3. 实现必需方法
+### 内置插件
 
-### 插件接口
+| 插件 | 功能 | 说明 |
+|------|------|------|
+| 腾讯翻译 | 多语言翻译 | 支持 15 种语言互译，自动检测源语言 |
+| OCR 识别 | 屏幕文字识别 | 区域截图识别，高精度 99% 准确率 |
+
+### 插件开发
+
+详细的插件开发指南请参阅 **[PLUGINS.md](PLUGINS.md)**，包含：
+
+- 插件架构与生命周期
+- 完整接口说明
+- 配置管理机制
+- 开发最佳实践
+- 完整示例代码
+
+### 快速开始
+
+1. 在 `plugins/` 目录创建插件文件
+2. 继承 `PluginBase` 类并实现必需方法
+3. 在 `config/settings.json` 中启用插件
 
 ```python
 from src.core.plugin_system import PluginBase
 
 class MyPlugin(PluginBase):
-    def get_name(self) -> str:
-        return "My Plugin"
-    
-    def get_icon(self) -> str:
-        return "icon_name"
-    
-    def get_info(self) -> dict:
+    def get_metadata(self) -> dict:
         return {
+            "plugin_id": "my_plugin",
             "name": "My Plugin",
             "version": "1.0.0",
-            "author": "Your Name",
             "description": "插件描述"
         }
     
     def handle_click(self):
-        # 点击时执行的逻辑
         pass
-    
-    def on_load(self):
-        # 可选：加载时调用
-        pass
-    
-    def on_unload(self):
-        # 可选：卸载时调用
-        pass
+
+def create_plugin():
+    return MyPlugin()
 ```
-
-### 启用插件
-
-在 `config/settings.json` 中配置：
-```json
-{
-  "plugin": {
-    "enabled_plugins": ["my_plugin"]
-  }
-}
-```
-
-### 开发建议
-
-- `handle_click()` 中避免长时间阻塞操作
-- 捕获异常并记录，避免影响主程序
-- 仅使用可信输入，避免安全风险
 
 ## 配置说明
 
@@ -245,7 +254,19 @@ class MyPlugin(PluginBase):
     "sort_by": "usage"
   },
   "plugin": {
-    "enabled_plugins": []
+    "enabled_plugins": ["mtran_server", "ocr"]
+  },
+  "plugins": {
+    "mtran_server": {
+      "secret_id": "your_secret_id",
+      "secret_key": "your_secret_key",
+      "region": "ap-beijing"
+    },
+    "TencentOcr": {
+      "secret_id": "your_secret_id",
+      "secret_key": "your_secret_key",
+      "region": "ap-beijing"
+    }
   }
 }
 ```

@@ -51,6 +51,14 @@ class ConfigManager(QObject):
         "plugin": {
             "enabled_plugins": [],
             "plugin_directory": "plugins"
+        },
+        "appearance": {
+            "background_type": "gradient",
+            "background_gradient_start": "#f8fafc",
+            "background_gradient_end": "#f1f5f9",
+            "background_color": "#f8fafc",
+            "background_image": "",
+            "accent_color": "#3b82f6"
         }
     }
     
@@ -61,6 +69,10 @@ class ConfigManager(QObject):
         # Config directories
         self.config_dir = Path("config")
         self.config_dir.mkdir(exist_ok=True)
+        
+        # Per-plugin config directory
+        self.plugins_config_dir = self.config_dir / "plugins"
+        self.plugins_config_dir.mkdir(exist_ok=True)
         
         # Config files
         self.settings_file = self.config_dir / "settings.json"

@@ -6,6 +6,7 @@ Monitors mouse buttons and keyboard shortcuts to trigger the panel
 """
 
 import logging
+import time
 import threading
 from PyQt5.QtCore import QObject, pyqtSignal, QTimer
 from pynput import mouse, keyboard as pynput_keyboard
@@ -265,7 +266,6 @@ class HotkeyListener(QObject):
     
     def _check_debounce(self) -> bool:
         """Check if enough time has passed since last trigger (debounce)"""
-        import time
         current_time = time.time() * 1000  # Convert to milliseconds
         
         if current_time - self.last_trigger_time > self.debounce_ms:

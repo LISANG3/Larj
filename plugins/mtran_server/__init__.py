@@ -435,8 +435,8 @@ class TranslationDialog(QDialog):
             self.status_label.setText("文本长度超过6000字符限制")
             return
         
-        secret_id = self.plugin.get_secret_id()
-        secret_key = self.plugin.get_secret_key()
+        secret_id = self.plugin.secret_id
+        secret_key = self.plugin.secret_key
         
         if not secret_id or not secret_key:
             self.status_label.setText("请先配置 SecretId 和 SecretKey")
@@ -451,7 +451,7 @@ class TranslationDialog(QDialog):
         
         self.worker = TranslationWorker(
             secret_id, secret_key, text, source_lang, target_lang,
-            self.plugin.get_region()
+            self.plugin.region
         )
         self.worker.finished.connect(self.on_translation_finished)
         self.worker.error.connect(self.on_translation_error)
@@ -506,42 +506,25 @@ class TencentTranslationPlugin(PluginBase):
     
     def __init__(self):
         self.logger = logging.getLogger(__name__)
-        self._secret_id = ""
-        self._secret_key = ""
-        self._region = "ap-beijing"
+        self.secret_id = ""
+        self.secret_key = ""
+        self.region = "ap-beijing"
         self._dialog = None
     
-    def get_name(self) -> str:
-        return "TencentTranslation"
-    
-    def get_icon(self) -> str:
-        return "translate"
-    
-    def get_info(self) -> dict:
+    def get_metadata(self) -> dict:
         return {
+            "plugin_id": "mtran_server",
             "name": "腾讯翻译",
+            "icon": "translate",
             "version": "1.0.0",
             "author": "Larj Team",
-            "description": "腾讯云机器翻译插件 - 支持多语言翻译"
+            "description": "腾讯云机器翻译插件 - 支持多语言翻译",
+            "config_schema": {
+                "secret_id": {"type": "str", "required": True, "desc": "腾讯云 API 密钥 ID"},
+                "secret_key": {"type": "str", "required": True, "secret": True, "desc": "腾讯云 API 密钥 Key"},
+                "region": {"type": "str", "required": True, "default": "ap-beijing", "desc": "API 地域 (如 ap-beijing, ap-shanghai)"}
+            }
         }
-    
-    def get_secret_id(self) -> str:
-        return self._secret_id
-    
-    def set_secret_id(self, secret_id: str):
-        self._secret_id = secret_id
-    
-    def get_secret_key(self) -> str:
-        return self._secret_key
-    
-    def set_secret_key(self, secret_key: str):
-        self._secret_key = secret_key
-    
-    def get_region(self) -> str:
-        return self._region
-    
-    def set_region(self, region: str):
-        self._region = region
     
     def handle_click(self):
         if self._dialog is None or not self._dialog.isVisible():
@@ -559,35 +542,13 @@ class TencentTranslationPlugin(PluginBase):
             self._dialog.close()
         self.logger.info("TencentTranslation plugin unloaded")
     
-    def get_settings(self) -> dict:
-        return {
-            "secret_id": {
-                "type": "text",
-                "label": "SecretId",
-                "default": self._secret_id,
-                "description": "腾讯云 API 密钥 ID"
-            },
-            "secret_key": {
-                "type": "password",
-                "label": "SecretKey",
-                "default": self._secret_key,
-                "description": "腾讯云 API 密钥 Key"
-            },
-            "region": {
-                "type": "text",
-                "label": "地域",
-                "default": self._region,
-                "description": "API 地域 (如 ap-beijing, ap-shanghai)"
-            }
-        }
-    
     def apply_settings(self, settings: dict):
         if "secret_id" in settings:
-            self.set_secret_id(settings["secret_id"])
+            self.secret_id = settings["secret_id"]
         if "secret_key" in settings:
-            self.set_secret_key(settings["secret_key"])
+            self.secret_key = settings["secret_key"]
         if "region" in settings:
-            self.set_region(settings["region"])
+            self.region = settings["region"]
 
 
 plugin_class = TencentTranslationPlugin
