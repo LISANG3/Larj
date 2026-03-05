@@ -15,9 +15,9 @@ from PyQt5.QtWidgets import (
     QScrollArea, QLabel, QGridLayout, QListWidget, QListWidgetItem,
     QStackedWidget, QFrame, QDialog, QDialogButtonBox, QFormLayout,
     QCheckBox, QSpinBox, QFileDialog, QMessageBox, QGraphicsDropShadowEffect,
-    QMenu, QAction, QInputDialog, QColorDialog, QComboBox
+    QMenu, QAction, QInputDialog, QColorDialog, QComboBox, QToolButton
 )
-from PyQt5.QtCore import Qt, pyqtSignal, QTimer, QMimeData, QPoint
+from PyQt5.QtCore import Qt, pyqtSignal, QTimer, QMimeData, QPoint, QSize
 from PyQt5.QtGui import QIcon, QPixmap, QFont, QColor, QPalette, QLinearGradient, QBrush, QPainter, QPen, QDrag
 from pynput import mouse
 from src.core.hotkey_listener import detect_hotkey, DEFAULT_TRIGGER_KEY
@@ -196,7 +196,7 @@ class ModernStyle:
     """
 
     APP_BUTTON_STYLE = """
-    QPushButton {
+    QToolButton {
         font-size: 11px;
         font-family: "Segoe UI Variable", "Microsoft YaHei UI", "PingFang SC", sans-serif;
         font-weight: 500;
@@ -204,15 +204,16 @@ class ModernStyle:
         border-radius: 14px;
         background: rgba(255, 255, 255, 0.88);
         color: #334155;
+        padding-top: 8px;
     }
 
-    QPushButton:hover {
+    QToolButton:hover {
         background: #ffffff;
         border: 1.5px solid #6366f1;
         color: #312e81;
     }
 
-    QPushButton:pressed {
+    QToolButton:pressed {
         background: #eef2ff;
         border: 1.5px solid #818cf8;
     }
@@ -522,13 +523,15 @@ class MainPanel(QWidget):
         except Exception as e:
             self.logger.error(f"Failed to load apps: {e}", exc_info=True)
     
-    def _create_plugin_button(self, plugin_item: dict) -> QPushButton:
-        """Create a button for a plugin"""
+    def _create_plugin_button(self, plugin_item: dict) -> QToolButton:
+        """Create a button for a plugin with icon on top and name below"""
         plugin = plugin_item.get("plugin_instance")
         metadata = plugin.get_metadata()
 
-        button = QPushButton(metadata.get("name", "Plugin"))
-        button.setFixedSize(128, 82)
+        button = QToolButton()
+        button.setText(metadata.get("name", "Plugin"))
+        button.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
+        button.setFixedSize(128, 90)
         button.setStyleSheet(ModernStyle.APP_BUTTON_STYLE)
         button.setCursor(Qt.PointingHandCursor)
 
@@ -547,10 +550,12 @@ class MainPanel(QWidget):
         except Exception as e:
             self.logger.error(f"Failed to handle plugin click: {e}", exc_info=True)
     
-    def _create_app_button(self, app: dict) -> QPushButton:
-        """Create a button for an app"""
-        button = QPushButton(app.get("name", "Unknown"))
-        button.setFixedSize(128, 82)
+    def _create_app_button(self, app: dict) -> QToolButton:
+        """Create a button for an app with icon on top and name below"""
+        button = QToolButton()
+        button.setText(app.get("name", "Unknown"))
+        button.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
+        button.setFixedSize(128, 90)
         button.setStyleSheet(ModernStyle.APP_BUTTON_STYLE)
         button.setCursor(Qt.PointingHandCursor)
         
@@ -560,7 +565,7 @@ class MainPanel(QWidget):
         icon = extract_icon_from_file(app.get("path", ""))
         if not icon.isNull():
             button.setIcon(icon)
-            button.setIconSize(button.size() * 0.4)
+            button.setIconSize(QSize(48, 48))
         
         button.setContextMenuPolicy(Qt.CustomContextMenu)
         button.customContextMenuRequested.connect(lambda pos, b=button, a=app: self._show_app_context_menu(pos, b, a))
