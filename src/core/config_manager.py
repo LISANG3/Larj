@@ -28,8 +28,8 @@ class ConfigManager(QObject):
             "enabled": True
         },
         "window": {
-            "width": 600,
-            "height": 400,
+            "width": 480,
+            "height": 360,
             "opacity": 95,
             "corner_radius": 10,
             "follow_mouse": True,

@@ -77,6 +77,7 @@ class WindowManager:
             self.window.setFixedSize(self.width, self.height)
             self.window.setWindowOpacity(self.opacity)
             
+            # 设置无边框窗口标志，保持窗口始终置顶
             self.window.setWindowFlags(
                 Qt.Window |
                 Qt.FramelessWindowHint |
@@ -84,6 +85,9 @@ class WindowManager:
                 Qt.Tool
             )
             
+            # 启用透明背景属性，使圆角窗口能够正确渲染
+            # 这是解决窗口边角黑色直角的关键
+            self.window.setAttribute(Qt.WA_TranslucentBackground, True)
             self.window.setAttribute(Qt.WA_ShowWithoutActivating, False)
             
             self.logger.info("Main panel window created")

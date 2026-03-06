@@ -7,7 +7,6 @@ Contains search box, app grid, and search results
 
 import logging
 import os
-import struct
 from pathlib import Path
 import psutil
 from PyQt5.QtWidgets import (
@@ -23,7 +22,107 @@ from pynput import mouse
 from src.core.hotkey_listener import detect_hotkey, DEFAULT_TRIGGER_KEY
 
 
-def extract_icon_from_file(file_path: str, size: int = 48) -> QIcon:
+def _hicon_to_pixmap(hicon, size: int) -> QPixmap:
+    """使用 DIB Section 将 Windows HICON 句柄正确转换为 QPixmap，避免歪斜失真"""
+    import ctypes
+    from ctypes import wintypes, c_void_p, byref, sizeof, c_ubyte
+
+    user32 = ctypes.windll.user32
+    gdi32 = ctypes.windll.gdi32
+
+    # 设置函数签名，确保 64 位系统下句柄不被截断
+    user32.GetDC.argtypes = [wintypes.HWND]
+    user32.GetDC.restype = wintypes.HDC
+    user32.ReleaseDC.argtypes = [wintypes.HWND, wintypes.HDC]
+    user32.ReleaseDC.restype = ctypes.c_int
+    user32.DrawIconEx.argtypes = [
+        wintypes.HDC, ctypes.c_int, ctypes.c_int,
+        wintypes.HICON, ctypes.c_int, ctypes.c_int,
+        wintypes.UINT, wintypes.HANDLE, wintypes.UINT,
+    ]
+    user32.DrawIconEx.restype = wintypes.BOOL
+    gdi32.CreateCompatibleDC.argtypes = [wintypes.HDC]
+    gdi32.CreateCompatibleDC.restype = wintypes.HDC
+    gdi32.CreateDIBSection.argtypes = [
+        wintypes.HDC, c_void_p, wintypes.UINT,
+        ctypes.POINTER(c_void_p), wintypes.HANDLE, wintypes.DWORD,
+    ]
+    gdi32.CreateDIBSection.restype = wintypes.HBITMAP
+    gdi32.SelectObject.argtypes = [wintypes.HDC, wintypes.HGDIOBJ]
+    gdi32.SelectObject.restype = wintypes.HGDIOBJ
+    gdi32.DeleteObject.argtypes = [wintypes.HGDIOBJ]
+    gdi32.DeleteObject.restype = wintypes.BOOL
+    gdi32.DeleteDC.argtypes = [wintypes.HDC]
+    gdi32.DeleteDC.restype = wintypes.BOOL
+
+    class BITMAPINFOHEADER(ctypes.Structure):
+        _fields_ = [
+            ('biSize', wintypes.DWORD),
+            ('biWidth', wintypes.LONG),
+            ('biHeight', wintypes.LONG),
+            ('biPlanes', wintypes.WORD),
+            ('biBitCount', wintypes.WORD),
+            ('biCompression', wintypes.DWORD),
+            ('biSizeImage', wintypes.DWORD),
+            ('biXPelsPerMeter', wintypes.LONG),
+            ('biYPelsPerMeter', wintypes.LONG),
+            ('biClrUsed', wintypes.DWORD),
+            ('biClrImportant', wintypes.DWORD),
+        ]
+
+    bmi = BITMAPINFOHEADER()
+    bmi.biSize = sizeof(BITMAPINFOHEADER)
+    bmi.biWidth = size
+    bmi.biHeight = -size  # 负值表示自上而下的 DIB，避免图像倒转
+    bmi.biPlanes = 1
+    bmi.biBitCount = 32   # 固定 32 位 ARGB 格式
+    bmi.biCompression = 0  # BI_RGB
+
+    hdc_screen = user32.GetDC(0)
+    hdc_mem = gdi32.CreateCompatibleDC(hdc_screen)
+
+    ppvBits = c_void_p()
+    hbmp = gdi32.CreateDIBSection(
+        hdc_screen, byref(bmi), 0, byref(ppvBits), None, 0,
+    )
+
+    pixmap = QPixmap()
+
+    if hbmp and ppvBits:
+        old_bmp = gdi32.SelectObject(hdc_mem, hbmp)
+
+        # DrawIconEx 将图标缩放到目标尺寸，DI_NORMAL = 0x3
+        user32.DrawIconEx(hdc_mem, 0, 0, hicon, size, size, 0, 0, 0x3)
+
+        data_size = size * size * 4
+        buf = (c_ubyte * data_size)()
+        ctypes.memmove(buf, ppvBits, data_size)
+
+        # 修复没有 Alpha 通道的旧式图标
+        has_alpha = False
+        for i in range(3, data_size, 4):
+            if buf[i] != 0:
+                has_alpha = True
+                break
+        if not has_alpha:
+            for i in range(3, data_size, 4):
+                buf[i] = 255
+
+        from PyQt5.QtGui import QImage
+        raw_data = bytes(buf)
+        img = QImage(raw_data, size, size, size * 4, QImage.Format_ARGB32)
+        pixmap = QPixmap.fromImage(img)
+
+        gdi32.SelectObject(hdc_mem, old_bmp)
+        gdi32.DeleteObject(hbmp)
+
+    gdi32.DeleteDC(hdc_mem)
+    user32.ReleaseDC(0, hdc_screen)
+
+    return pixmap
+
+
+def extract_icon_from_file(file_path: str, size: int = 32) -> QIcon:
     """Extract icon from executable or shortcut file (Windows)"""
     if not os.path.exists(file_path):
         return QIcon()
@@ -32,10 +131,7 @@ def extract_icon_from_file(file_path: str, size: int = 48) -> QIcon:
     
     if os.name == 'nt':
         try:
-            import win32api
             import win32gui
-            import win32ui
-            import win32con
             
             if ext == '.lnk':
                 import win32com.client
@@ -48,23 +144,13 @@ def extract_icon_from_file(file_path: str, size: int = 48) -> QIcon:
             
             if ext in ['.exe', '.dll', '.ico']:
                 hicon = win32gui.ExtractIcon(0, file_path, 0)
-                if hicon > 0:
-                    hdc = win32ui.CreateDCFromHandle(win32gui.GetDC(0))
-                    hbmp = win32ui.CreateBitmap()
-                    hbmp.CreateCompatibleBitmap(hdc, size, size)
-                    hdc_mem = hdc.CreateCompatibleDC()
-                    hdc_mem.SelectObject(hbmp)
-                    hdc_mem.DrawIcon((0, 0), hicon)
-                    
-                    bmpinfo = hbmp.GetInfo()
-                    bmpstr = hbmp.GetBitmapBits(True)
-                    
-                    from PyQt5.QtGui import QImage
-                    img = QImage(bmpstr, bmpinfo['bmWidth'], bmpinfo['bmHeight'], QImage.Format_ARGB32)
-                    pixmap = QPixmap.fromImage(img)
-                    
-                    win32gui.DestroyIcon(hicon)
-                    return QIcon(pixmap)
+                if hicon and hicon > 0:
+                    try:
+                        pixmap = _hicon_to_pixmap(hicon, size)
+                        if pixmap and not pixmap.isNull():
+                            return QIcon(pixmap)
+                    finally:
+                        win32gui.DestroyIcon(hicon)
         except ImportError:
             pass
         except Exception:
@@ -90,11 +176,11 @@ class ModernStyle:
     }
 
     QLineEdit#searchBox {
-        padding: 14px 18px 14px 42px;
-        font-size: 14px;
-        font-family: "Segoe UI Variable", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+        padding: 10px 14px 10px 36px;
+        font-size: 13px;
+        font-family: "Microsoft YaHei UI", "Segoe UI Variable", "PingFang SC", sans-serif;
         border: 1.5px solid rgba(148, 163, 184, 0.3);
-        border-radius: 14px;
+        border-radius: 12px;
         background: rgba(255, 255, 255, 0.85);
         color: #0f172a;
         selection-background-color: #6366f1;
@@ -111,9 +197,9 @@ class ModernStyle:
 
     QPushButton#settingsBtn {
         padding: 0px;
-        font-size: 18px;
+        font-size: 16px;
         border: none;
-        border-radius: 12px;
+        border-radius: 10px;
         background: rgba(241, 245, 249, 0.8);
         color: #64748b;
     }
@@ -197,39 +283,40 @@ class ModernStyle:
 
     APP_BUTTON_STYLE = """
     QToolButton {
-        font-size: 11px;
-        font-family: "Segoe UI Variable", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+        font-size: 10px;
+        font-family: "Microsoft YaHei UI", "Segoe UI Variable", "PingFang SC", sans-serif;
         font-weight: 500;
-        border: none;
-        border-radius: 12px;
+
+        border: 1.5px solid transparent;
+        border-radius: 10px;
         background: rgba(255, 255, 255, 0.92);
         color: #475569;
-        padding: 12px 8px 8px 8px;
-        margin: 4px;
+
+        padding: 3px;
+        margin: 1px;
     }
 
     QToolButton:hover {
         background: #ffffff;
-        border: 2px solid #6366f1;
+        border: 1.5px solid #6366f1;
         color: #4f46e5;
-        padding: 10px 6px 6px 6px;
     }
 
     QToolButton:pressed {
         background: #eef2ff;
-        border: 2px solid #818cf8;
+        border: 1.5px solid #818cf8;
         color: #4338ca;
     }
     """
 
     ADD_BUTTON_STYLE = """
     QPushButton {
-        padding: 14px;
-        font-size: 12px;
+        padding: 10px;
+        font-size: 11px;
         font-family: "Segoe UI Variable", "Microsoft YaHei UI", "PingFang SC", sans-serif;
         font-weight: 500;
         border: 1.5px dashed rgba(165, 180, 252, 0.5);
-        border-radius: 14px;
+        border-radius: 10px;
         background: rgba(238, 242, 255, 0.35);
         color: #818cf8;
     }
@@ -248,9 +335,13 @@ class ModernStyle:
     }
 
     QLabel {
-        font-family: "Segoe UI Variable", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+        font-family: "Microsoft YaHei UI", "Segoe UI Variable", "PingFang SC", sans-serif;
         font-size: 13px;
         color: #334155;
+        border: none;
+        background: transparent;
+        padding: 4px 4px;
+        min-height: 28px;
     }
 
     QLineEdit {
@@ -260,6 +351,8 @@ class ModernStyle:
         border-radius: 10px;
         background: #f8fafc;
         color: #0f172a;
+        /* 确保文字有足够的空间显示 */
+        min-height: 20px;
     }
 
     QLineEdit:focus {
@@ -272,6 +365,9 @@ class ModernStyle:
         font-size: 13px;
         color: #334155;
         spacing: 8px;
+        /* 移除边框，避免显示线框 */
+        border: none;
+        background: transparent;
     }
 
     QCheckBox::indicator {
@@ -294,6 +390,8 @@ class ModernStyle:
         border-radius: 10px;
         background: #f8fafc;
         color: #0f172a;
+        /* 移除边框，避免显示线框 */
+        min-height: 20px;
     }
 
     QSpinBox:focus {
@@ -301,12 +399,13 @@ class ModernStyle:
     }
 
     QPushButton {
-        padding: 10px 20px;
+        padding: 8px 20px;
         font-size: 13px;
-        font-family: "Segoe UI Variable", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+        font-family: "Microsoft YaHei UI", "Segoe UI Variable", "PingFang SC", sans-serif;
         font-weight: 500;
         border: none;
         border-radius: 10px;
+        min-height: 24px;
     }
 
     QPushButton#detectBtn {
@@ -317,6 +416,31 @@ class ModernStyle:
     QPushButton#detectBtn:hover {
         background: #eef2ff;
         color: #6366f1;
+    }
+    
+    QComboBox {
+        padding: 8px 12px;
+        font-size: 13px;
+        border: 1.5px solid #e2e8f0;
+        border-radius: 10px;
+        background: #f8fafc;
+        color: #0f172a;
+        /* 移除边框，避免显示线框 */
+        min-height: 20px;
+    }
+    
+    QComboBox:focus {
+        border-color: #6366f1;
+    }
+    
+    QComboBox::drop-down {
+        border: none;
+        width: 20px;
+    }
+    
+    QComboBox::down-arrow {
+        width: 12px;
+        height: 12px;
     }
     """
 
@@ -355,23 +479,23 @@ class MainPanel(QWidget):
         self.setAttribute(Qt.WA_StyledBackground, True)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 18, 20, 12)
-        layout.setSpacing(14)
+        layout.setContentsMargins(16, 14, 16, 10)
+        layout.setSpacing(10)
 
         # ── Header: search box + settings gear ────────────────────────
         header_layout = QHBoxLayout()
-        header_layout.setSpacing(10)
+        header_layout.setSpacing(8)
 
         # Search box with search icon drawn via paintEvent overlay
         self.search_box = QLineEdit()
         self.search_box.setObjectName("searchBox")
         self.search_box.setPlaceholderText("🔍  搜索文件或输入命令…")
-        self.search_box.setMinimumHeight(46)
+        self.search_box.setMinimumHeight(38)
         header_layout.addWidget(self.search_box, 1)
 
         self.settings_button = QPushButton("⚙")
         self.settings_button.setObjectName("settingsBtn")
-        self.settings_button.setFixedSize(46, 46)
+        self.settings_button.setFixedSize(38, 38)
         self.settings_button.setCursor(Qt.PointingHandCursor)
         self.settings_button.setToolTip("设置")
         self.settings_button.setAccessibleName("设置")
@@ -398,15 +522,17 @@ class MainPanel(QWidget):
         app_container = QWidget()
         app_container.setStyleSheet("background: transparent;")
         self.app_grid = QGridLayout(app_container)
-        self.app_grid.setSpacing(10)
-        self.app_grid.setContentsMargins(2, 2, 2, 2)
+        # 设置网格间距，确保图标之间间距一致
+        self.app_grid.setSpacing(8)
+        # 设置网格边距，确保图标在容器中对齐
+        self.app_grid.setContentsMargins(6, 6, 6, 6)
         app_scroll.setWidget(app_container)
 
         self.app_grid_layout.addWidget(app_scroll)
 
         self.add_app_button = QPushButton("+ 添加应用")
         self.add_app_button.setStyleSheet(ModernStyle.ADD_BUTTON_STYLE)
-        self.add_app_button.setMinimumHeight(46)
+        self.add_app_button.setMinimumHeight(36)
         self.add_app_button.setCursor(Qt.PointingHandCursor)
         self.add_app_button.clicked.connect(self._on_add_app_clicked)
         self.app_grid_layout.addWidget(self.add_app_button)
@@ -470,9 +596,9 @@ class MainPanel(QWidget):
         self.setStyleSheet(ModernStyle.MODERN_STYLE)
 
         shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(40)
+        shadow.setBlurRadius(30)
         shadow.setXOffset(0)
-        shadow.setYOffset(10)
+        shadow.setYOffset(6)
         shadow.setColor(QColor(0, 0, 0, 50))
         self.setGraphicsEffect(shadow)
     
@@ -511,6 +637,9 @@ class MainPanel(QWidget):
                     })
             
             cols = 4
+            # 设置列等宽拉伸，保证每个图标列宽一致
+            for c in range(cols):
+                self.app_grid.setColumnStretch(c, 1)
             for i, item in enumerate(all_items):
                 row = i // cols
                 col = i % cols
@@ -519,7 +648,7 @@ class MainPanel(QWidget):
                     button = self._create_plugin_button(item)
                 else:
                     button = self._create_app_button(item)
-                self.app_grid.addWidget(button, row, col)
+                self.app_grid.addWidget(button, row, col, Qt.AlignCenter)
             
             self.logger.debug(f"Loaded {len(apps)} apps and {len(all_items) - len(apps)} plugins")
             
@@ -533,20 +662,21 @@ class MainPanel(QWidget):
 
         button = QToolButton()
         button.setText(metadata.get("name", "Plugin"))
+        # 设置图标在上方，文字在下方
         button.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
-        button.setFixedSize(100, 100)
+        # 固定按钮大小，与应用按钮保持一致
+        button.setFixedSize(72, 72)
         button.setStyleSheet(ModernStyle.APP_BUTTON_STYLE)
         button.setCursor(Qt.PointingHandCursor)
 
         button.setProperty("plugin_data", plugin_item)
         button.clicked.connect(lambda: self._on_plugin_clicked(plugin))
 
-        font = QFont("Segoe UI Variable", 10, QFont.Normal)
-        button.setFont(font)
-
+        # 使用默认图标，保持与应用图标相同大小
         default_icon = self._create_default_plugin_icon(metadata.get("name", "Plugin"))
         button.setIcon(default_icon)
-        button.setIconSize(QSize(40, 40))
+        # 统一图标显示大小为32x32像素
+        button.setIconSize(QSize(32, 32))
 
         return button
 
@@ -561,7 +691,7 @@ class MainPanel(QWidget):
         ]
         color = colors[hash(name) % len(colors)]
         
-        pixmap = QPixmap(64, 64)
+        pixmap = QPixmap(40, 40)
         pixmap.fill(Qt.transparent)
         
         painter = QPainter(pixmap)
@@ -569,11 +699,11 @@ class MainPanel(QWidget):
         
         painter.setBrush(QBrush(color))
         painter.setPen(Qt.NoPen)
-        painter.drawRoundedRect(4, 4, 56, 56, 12, 12)
+        painter.drawRoundedRect(2, 2, 36, 36, 8, 8)
         
-        painter.setPen(QPen(QColor(255, 255, 255), 2.5))
+        painter.setPen(QPen(QColor(255, 255, 255), 2))
         font = painter.font()
-        font.setPointSize(24)
+        font.setPointSize(16)
         font.setBold(True)
         painter.setFont(font)
         painter.drawText(pixmap.rect(), 0x0084, name[0].upper() if name else "P")
@@ -593,25 +723,27 @@ class MainPanel(QWidget):
         """Create a button for an app with icon on top and name below"""
         button = QToolButton()
         button.setText(app.get("name", "Unknown"))
+        # 设置图标在上方，文字在下方
         button.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
-        button.setFixedSize(100, 100)
+        # 固定按钮大小，确保所有图标容器大小一致
+        button.setFixedSize(72, 72)
         button.setStyleSheet(ModernStyle.APP_BUTTON_STYLE)
         button.setCursor(Qt.PointingHandCursor)
         
         button.setProperty("app_data", app)
         button.clicked.connect(lambda: self._on_app_clicked(app))
         
-        icon = extract_icon_from_file(app.get("path", ""))
+        # 提取图标并统一大小，确保所有图标尺寸一致
+        icon = extract_icon_from_file(app.get("path", ""), size=32)
         if not icon.isNull():
             button.setIcon(icon)
-            button.setIconSize(QSize(40, 40))
+            # 统一图标显示大小为32x32像素
+            button.setIconSize(QSize(32, 32))
         else:
+            # 使用默认图标，保持相同大小
             default_icon = self._create_default_app_icon(app.get("name", "App"))
             button.setIcon(default_icon)
-            button.setIconSize(QSize(40, 40))
-        
-        font = QFont("Segoe UI Variable", 10, QFont.Normal)
-        button.setFont(font)
+            button.setIconSize(QSize(32, 32))
         
         button.setContextMenuPolicy(Qt.CustomContextMenu)
         button.customContextMenuRequested.connect(lambda pos, b=button, a=app: self._show_app_context_menu(pos, b, a))
@@ -634,7 +766,7 @@ class MainPanel(QWidget):
         ]
         color = colors[hash(name) % len(colors)]
         
-        pixmap = QPixmap(64, 64)
+        pixmap = QPixmap(40, 40)
         pixmap.fill(Qt.transparent)
         
         painter = QPainter(pixmap)
@@ -642,11 +774,11 @@ class MainPanel(QWidget):
         
         painter.setBrush(QBrush(color))
         painter.setPen(Qt.NoPen)
-        painter.drawRoundedRect(4, 4, 56, 56, 12, 12)
+        painter.drawRoundedRect(2, 2, 36, 36, 8, 8)
         
-        painter.setPen(QPen(QColor(255, 255, 255), 2.5))
+        painter.setPen(QPen(QColor(255, 255, 255), 2))
         font = painter.font()
-        font.setPointSize(24)
+        font.setPointSize(16)
         font.setBold(True)
         painter.setFont(font)
         painter.drawText(pixmap.rect(), 0x0084, name[0].upper() if name else "A")
@@ -870,7 +1002,7 @@ class MainPanel(QWidget):
         self._settings_dialog = dialog
         dialog.setWindowTitle("设置")
         dialog.setModal(True)
-        dialog.setMinimumSize(520, 520)
+        dialog.setMinimumSize(560, 540)
         dialog.setStyleSheet(ModernStyle.DIALOG_STYLE)
         
         main_layout = QVBoxLayout(dialog)
@@ -884,15 +1016,16 @@ class MainPanel(QWidget):
                 background: #ffffff;
             }
             QTabBar::tab {
-                padding: 12px 28px;
+                padding: 10px 24px;
                 margin: 0;
                 background: #f8fafc;
                 color: #64748b;
                 border: none;
                 border-bottom: 2px solid transparent;
-                font-family: "Segoe UI Variable", "Microsoft YaHei UI", sans-serif;
+                font-family: "Microsoft YaHei UI", "Segoe UI Variable", sans-serif;
                 font-size: 13px;
                 font-weight: 500;
+                min-width: 60px;
             }
             QTabBar::tab:selected {
                 background: #ffffff;
@@ -911,13 +1044,23 @@ class MainPanel(QWidget):
         general_layout.setContentsMargins(24, 24, 24, 24)
         
         form_widget = QWidget()
+        form_widget.setObjectName("generalForm")
+        form_widget.setStyleSheet("#generalForm { background: transparent; border: none; }")
         form_layout = QFormLayout(form_widget)
+        # 设置表单间距，确保标签和控件之间有足够的空间
         form_layout.setSpacing(16)
+        # 设置标签对齐方式，确保标签文字显示完整
         form_layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        # 设置字段对齐方式，确保控件对齐
+        form_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
+        # 设置表单边距，确保内容不会贴边
+        form_layout.setContentsMargins(0, 0, 0, 0)
         
         hotkey_enabled_checkbox = QCheckBox()
         hotkey_enabled_checkbox.setChecked(self.config_manager.get("hotkey.enabled", True))
-        form_layout.addRow("启用热键", hotkey_enabled_checkbox)
+        lbl = QLabel("启用热键")
+        lbl.setMinimumWidth(120)
+        form_layout.addRow(lbl, hotkey_enabled_checkbox)
         
         hotkey_widget = QWidget()
         hotkey_layout = QHBoxLayout(hotkey_widget)
@@ -927,10 +1070,13 @@ class MainPanel(QWidget):
         hotkey_input.setMinimumWidth(150)
         hotkey_input.setText(self.config_manager.get("hotkey.trigger_key", DEFAULT_TRIGGER_KEY))
         detect_hotkey_button = QPushButton("检测")
-        detect_hotkey_button.setFixedWidth(60)
+        detect_hotkey_button.setObjectName("detectBtn")
+        detect_hotkey_button.setFixedWidth(80)
         hotkey_layout.addWidget(hotkey_input)
         hotkey_layout.addWidget(detect_hotkey_button)
-        form_layout.addRow("触发热键", hotkey_widget)
+        lbl = QLabel("触发热键")
+        lbl.setMinimumWidth(120)
+        form_layout.addRow(lbl, hotkey_widget)
         
         def on_detect_hotkey():
             dialog.setWindowTitle("设置（按下任意键或鼠标键）")
@@ -943,21 +1089,29 @@ class MainPanel(QWidget):
         
         follow_mouse_checkbox = QCheckBox()
         follow_mouse_checkbox.setChecked(self.config_manager.get("window.follow_mouse", True))
-        form_layout.addRow("窗口跟随鼠标", follow_mouse_checkbox)
+        lbl = QLabel("窗口跟随鼠标")
+        lbl.setMinimumWidth(120)
+        form_layout.addRow(lbl, follow_mouse_checkbox)
         
         hide_on_focus_loss_checkbox = QCheckBox()
         hide_on_focus_loss_checkbox.setChecked(self.config_manager.get("window.hide_on_focus_loss", True))
-        form_layout.addRow("点击外部自动隐藏", hide_on_focus_loss_checkbox)
+        lbl = QLabel("点击外部自动隐藏")
+        lbl.setMinimumWidth(120)
+        form_layout.addRow(lbl, hide_on_focus_loss_checkbox)
         
         max_results_spinbox = QSpinBox()
         max_results_spinbox.setRange(10, 500)
         max_results_spinbox.setValue(self.config_manager.get("search.max_results", 50))
         max_results_spinbox.setMinimumWidth(100)
-        form_layout.addRow("搜索结果上限", max_results_spinbox)
+        lbl = QLabel("搜索结果上限")
+        lbl.setMinimumWidth(120)
+        form_layout.addRow(lbl, max_results_spinbox)
         
         autostart_checkbox = QCheckBox()
         autostart_checkbox.setChecked(self._is_autostart_enabled())
-        form_layout.addRow("开机自启动", autostart_checkbox)
+        lbl = QLabel("开机自启动")
+        lbl.setMinimumWidth(120)
+        form_layout.addRow(lbl, autostart_checkbox)
         
         general_layout.addWidget(form_widget)
         general_layout.addStretch()
@@ -978,8 +1132,9 @@ class MainPanel(QWidget):
         if discovered:
             for plugin_id, metadata in discovered.items():
                 plugin_group = QWidget()
+                plugin_group.setObjectName("pluginCard")
                 plugin_group.setStyleSheet("""
-                    QWidget {
+                    QWidget#pluginCard {
                         background: #f8fafc;
                         border-radius: 14px;
                         border: 1px solid rgba(148, 163, 184, 0.2);
@@ -993,23 +1148,27 @@ class MainPanel(QWidget):
                 
                 enable_checkbox = QCheckBox()
                 enable_checkbox.setChecked(plugin_id in enabled_plugins)
-                enable_checkbox.setStyleSheet("background: transparent;")
+                # 设置样式，移除线框，确保显示正确
+                enable_checkbox.setStyleSheet("background: transparent; border: none;")
                 header_layout.addWidget(enable_checkbox)
                 plugin_enable_checkboxes[plugin_id] = enable_checkbox
                 
                 name_label = QLabel(metadata.get("name", plugin_id))
-                name_label.setStyleSheet("font-size: 14px; font-weight: 600; color: #0f172a; background: transparent;")
+                # 设置样式，确保文字显示完整，移除线框
+                name_label.setStyleSheet("font-size: 14px; font-weight: 600; color: #0f172a; background: transparent; border: none;")
                 header_layout.addWidget(name_label)
                 
                 version_label = QLabel(f"v{metadata.get('version', '1.0')}")
-                version_label.setStyleSheet("font-size: 11px; color: #a5b4fc; background: transparent; font-weight: 500;")
+                # 设置样式，确保文字显示完整，移除线框
+                version_label.setStyleSheet("font-size: 11px; color: #a5b4fc; background: transparent; font-weight: 500; border: none;")
                 header_layout.addWidget(version_label)
                 header_layout.addStretch()
                 
                 group_layout.addLayout(header_layout)
                 
                 desc_label = QLabel(metadata.get("description", ""))
-                desc_label.setStyleSheet("font-size: 12px; color: #64748b; background: transparent;")
+                # 设置样式，确保文字显示完整，移除线框
+                desc_label.setStyleSheet("font-size: 12px; color: #64748b; background: transparent; border: none;")
                 desc_label.setWordWrap(True)
                 group_layout.addWidget(desc_label)
                 
@@ -1021,10 +1180,16 @@ class MainPanel(QWidget):
                     saved_config = self.plugin_system.get_plugin_config(plugin_id) if self.plugin_system else {}
                     
                     settings_form = QWidget()
-                    settings_form.setStyleSheet("background: transparent;")
+                    settings_form.setObjectName("pluginSettingsForm")
+                    settings_form.setStyleSheet("#pluginSettingsForm { background: transparent; border: none; }")
                     settings_layout = QFormLayout(settings_form)
-                    settings_layout.setSpacing(10)
+                    # 设置表单间距，确保标签和控件之间有足够的空间
+                    settings_layout.setSpacing(12)
+                    # 设置标签对齐方式，确保标签文字显示完整
                     settings_layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                    # 设置字段对齐方式，确保控件对齐
+                    settings_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
+                    # 设置表单边距，确保内容不会贴边
                     settings_layout.setContentsMargins(0, 8, 0, 0)
                     
                     for setting_key, schema in config_schema.items():
@@ -1039,10 +1204,16 @@ class MainPanel(QWidget):
                         if schema.get("secret", False):
                             widget.setEchoMode(QLineEdit.Password)
                         widget.setText(str(saved_value))
+                        # 设置最小宽度，确保输入框有足够的空间显示内容
                         widget.setMinimumWidth(200)
-                        widget.setStyleSheet("background: #ffffff; border: 1px solid rgba(148, 163, 184, 0.25); border-radius: 8px; padding: 6px 10px;")
+                        # 设置样式，移除线框，确保文字显示完整
+                        widget.setStyleSheet("background: #ffffff; border: 1px solid rgba(148, 163, 184, 0.25); border-radius: 8px; padding: 8px 12px; font-size: 13px;")
                         
-                        settings_layout.addRow(label + ":", widget)
+                        # 创建标签并设置样式，确保文字显示完整
+                        label_widget = QLabel(label + ":")
+                        label_widget.setMinimumWidth(120)
+                        label_widget.setStyleSheet("font-size: 13px; color: #334155; background: transparent; border: none;")
+                        settings_layout.addRow(label_widget, widget)
                         plugin_settings_widgets[plugin_id][setting_key] = widget
                     
                     group_layout.addWidget(settings_form)
@@ -1071,7 +1242,8 @@ class MainPanel(QWidget):
 
         # -- Background type ---
         bg_type_label = QLabel("背景类型")
-        bg_type_label.setStyleSheet("font-size: 13px; font-weight: 600; color: #0f172a;")
+        # 设置样式，确保文字显示完整，移除线框
+        bg_type_label.setStyleSheet("font-size: 13px; font-weight: 600; color: #0f172a; background: transparent; border: none;")
         appearance_layout.addWidget(bg_type_label)
 
         bg_type_combo = QComboBox()
@@ -1082,6 +1254,7 @@ class MainPanel(QWidget):
             if bg_type_combo.itemData(idx) == current_bg_type:
                 bg_type_combo.setCurrentIndex(idx)
                 break
+        # 设置样式，确保文字显示完整，移除线框
         bg_type_combo.setStyleSheet("""
             QComboBox {
                 padding: 8px 12px; font-size: 13px; border: 1.5px solid #e2e8f0;
@@ -1089,6 +1262,7 @@ class MainPanel(QWidget):
             }
             QComboBox:focus { border-color: #6366f1; }
             QComboBox::drop-down { border: none; }
+            QComboBox::down-arrow { width: 12px; height: 12px; }
         """)
         appearance_layout.addWidget(bg_type_combo)
 
@@ -1113,15 +1287,27 @@ class MainPanel(QWidget):
 
         # -- Solid color --
         solid_widget = QWidget()
+        solid_widget.setObjectName("solidColorSection")
+        solid_widget.setStyleSheet("#solidColorSection { background: transparent; border: none; }")
         solid_layout = QFormLayout(solid_widget)
+        # 设置表单间距，确保标签和控件之间有足够的空间
         solid_layout.setSpacing(12)
+        # 设置标签对齐方式，确保标签文字显示完整
+        solid_layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        # 设置字段对齐方式，确保控件对齐
+        solid_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
         solid_layout.setContentsMargins(0, 0, 0, 0)
+        # 创建标签并设置样式，确保文字显示完整
+        solid_label = QLabel("背景颜色:")
+        solid_label.setStyleSheet("font-size: 13px; color: #334155; background: transparent; border: none;")
         solid_color_btn = _make_color_btn("appearance.background_color", "#f8fafc")
-        solid_layout.addRow("背景颜色:", solid_color_btn)
+        solid_layout.addRow(solid_label, solid_color_btn)
         appearance_layout.addWidget(solid_widget)
 
         # -- Image picker --
         image_widget = QWidget()
+        image_widget.setObjectName("imagePickerSection")
+        image_widget.setStyleSheet("#imagePickerSection { background: transparent; border: none; }")
         image_layout = QHBoxLayout(image_widget)
         image_layout.setContentsMargins(0, 0, 0, 0)
         image_layout.setSpacing(8)
@@ -1129,12 +1315,14 @@ class MainPanel(QWidget):
         image_path_input.setText(self.config_manager.get("appearance.background_image", ""))
         image_path_input.setReadOnly(True)
         image_path_input.setPlaceholderText("选择图片文件…")
-        image_path_input.setStyleSheet("padding: 8px 12px; font-size: 13px; border: 1.5px solid #e2e8f0; border-radius: 10px;")
+        # 设置样式，确保文字显示完整
+        image_path_input.setStyleSheet("padding: 8px 12px; font-size: 13px; border: 1.5px solid #e2e8f0; border-radius: 10px; background: #f8fafc;")
         browse_btn = QPushButton("浏览")
         browse_btn.setFixedSize(70, 36)
         browse_btn.setCursor(Qt.PointingHandCursor)
+        # 设置样式，确保按钮文字显示完整
         browse_btn.setStyleSheet(
-            "QPushButton { background: #f1f5f9; color: #475569; border: none; border-radius: 10px; font-size: 13px; }"
+            "QPushButton { background: #f1f5f9; color: #475569; border: none; border-radius: 10px; font-size: 13px; padding: 8px 12px; }"
             "QPushButton:hover { background: #eef2ff; color: #6366f1; }"
         )
 
@@ -1153,7 +1341,8 @@ class MainPanel(QWidget):
 
         # -- Accent color --
         accent_label = QLabel("主题强调色")
-        accent_label.setStyleSheet("font-size: 13px; font-weight: 600; color: #0f172a; margin-top: 8px;")
+        # 设置样式，确保文字显示完整，移除线框
+        accent_label.setStyleSheet("font-size: 13px; font-weight: 600; color: #0f172a; margin-top: 8px; background: transparent; border: none;")
         appearance_layout.addWidget(accent_label)
         accent_color_btn = _make_color_btn("appearance.accent_color", "#6366f1")
         appearance_layout.addWidget(accent_color_btn)
@@ -1414,8 +1603,20 @@ class MainPanel(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
 
+        # 先将整个窗口区域清为透明，确保圆角区域外的像素没有灰色残留
+        # （WA_TranslucentBackground + QGraphicsDropShadowEffect 组合时易出现灰角）
+        painter.setCompositionMode(QPainter.CompositionMode_Clear)
+        painter.fillRect(self.rect(), Qt.transparent)
+        painter.setCompositionMode(QPainter.CompositionMode_SourceOver)
+
         bg_type = self.config_manager.get("appearance.background_type", "solid")
         bg_color = self.config_manager.get("appearance.background_color", "#f8fafc")
+
+        from PyQt5.QtGui import QPainterPath
+        from PyQt5.QtCore import QRectF
+        rounded_path = QPainterPath()
+        rounded_path.addRoundedRect(QRectF(self.rect()), 18, 18)
+        painter.setClipPath(rounded_path)
 
         if bg_type == "image":
             image_path = self.config_manager.get("appearance.background_image", "")
@@ -1436,20 +1637,19 @@ class MainPanel(QWidget):
                         scaled = None
                 if scaled is not None:
                     painter.drawPixmap(0, 0, scaled)
-                    # Subtle border: slate-400 at ~25% opacity
                     painter.setPen(QPen(QColor(148, 163, 184, 64), 1))
                     painter.setBrush(Qt.NoBrush)
                     painter.drawRoundedRect(self.rect().adjusted(0, 0, -1, -1), 18, 18)
-                    super().paintEvent(event)
                     return
 
         color = QColor(bg_color)
         painter.setBrush(QBrush(color))
-        # Subtle border: slate-400 at ~25% opacity
-        painter.setPen(QPen(QColor(148, 163, 184, 64), 1))
-        painter.drawRoundedRect(self.rect().adjusted(0, 0, -1, -1), 18, 18)
+        painter.setPen(Qt.NoPen)
+        painter.drawRect(self.rect())
 
-        super().paintEvent(event)
+        painter.setPen(QPen(QColor(148, 163, 184, 64), 1))
+        painter.setBrush(Qt.NoBrush)
+        painter.drawRoundedRect(self.rect().adjusted(0, 0, -1, -1), 18, 18)
 
     def focusOutEvent(self, event):
         """Hide the panel when focus is lost by clicking outside."""
