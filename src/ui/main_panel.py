@@ -162,12 +162,208 @@ def extract_icon_from_file(file_path: str, size: int = 32) -> QIcon:
     return QIcon.fromTheme("application-x-executable", QIcon())
 
 
+def _resolve_style_tokens(style: str, tokens: dict) -> str:
+    """Resolve placeholder tokens in stylesheet text."""
+    for key, value in tokens.items():
+        style = style.replace(f"{{{key}}}", value)
+    return style
+
+
 class ModernStyle:
     # ── Accent color tokens (can be overridden at runtime) ─────────
     ACCENT = "#6366f1"          # Indigo-500
     ACCENT_HOVER = "#4f46e5"    # Indigo-600
     ACCENT_LIGHT = "#eef2ff"    # Indigo-50
     ACCENT_MUTED = "#a5b4fc"    # Indigo-300
+    WHITE = "#ffffff"
+    TEXT_PRIMARY = "#0f172a"
+    TEXT_SECONDARY = "#334155"
+    TEXT_TERTIARY = "#475569"
+    TEXT_MUTED = "#64748b"
+    BORDER_SOFT = "#e2e8f0"
+    SURFACE_SOFT = "#f8fafc"
+    SURFACE_MUTED = "#f1f5f9"
+
+    _STYLE_TOKENS = {
+        "ACCENT": ACCENT,
+        "ACCENT_HOVER": ACCENT_HOVER,
+        "ACCENT_LIGHT": ACCENT_LIGHT,
+        "ACCENT_MUTED": ACCENT_MUTED,
+        "WHITE": WHITE,
+        "TEXT_PRIMARY": TEXT_PRIMARY,
+        "TEXT_SECONDARY": TEXT_SECONDARY,
+        "TEXT_TERTIARY": TEXT_TERTIARY,
+        "TEXT_MUTED": TEXT_MUTED,
+        "BORDER_SOFT": BORDER_SOFT,
+        "SURFACE_SOFT": SURFACE_SOFT,
+        "SURFACE_MUTED": SURFACE_MUTED,
+    }
+
+    TRANSPARENT_BG_STYLE = "background: transparent;"
+    TRANSPARENT_SECTION_STYLE = "background: transparent; border: none;"
+
+    APP_MENU_STYLE = _resolve_style_tokens(
+        """
+        QMenu {
+            background: {WHITE};
+            border: 1px solid rgba(148, 163, 184, 0.25);
+            border-radius: 10px;
+            padding: 6px;
+        }
+        QMenu::item {
+            padding: 8px 20px 8px 14px;
+            border-radius: 6px;
+            color: {TEXT_SECONDARY};
+            font-family: "Segoe UI Variable", "Microsoft YaHei UI", sans-serif;
+            font-size: 13px;
+        }
+        QMenu::item:selected {
+            background: rgba(99, 102, 241, 0.08);
+            color: {ACCENT_HOVER};
+        }
+        QMenu::separator {
+            height: 1px;
+            background: {SURFACE_MUTED};
+            margin: 4px 8px;
+        }
+        """,
+        _STYLE_TOKENS,
+    )
+
+    ADD_MENU_STYLE = _resolve_style_tokens(
+        """
+        QMenu {
+            background: {WHITE};
+            border: 1px solid rgba(148, 163, 184, 0.25);
+            border-radius: 10px;
+            padding: 6px;
+        }
+        QMenu::item {
+            padding: 8px 20px 8px 14px;
+            border-radius: 6px;
+            color: {TEXT_SECONDARY};
+            font-family: "Segoe UI Variable", "Microsoft YaHei UI", sans-serif;
+            font-size: 13px;
+        }
+        QMenu::item:selected {
+            background: rgba(99, 102, 241, 0.08);
+            color: {ACCENT_HOVER};
+        }
+        """,
+        _STYLE_TOKENS,
+    )
+
+    SETTINGS_TAB_STYLE = _resolve_style_tokens(
+        """
+        QTabWidget::pane {
+            border: none;
+            background: {WHITE};
+        }
+        QTabBar::tab {
+            padding: 10px 24px;
+            margin: 0;
+            background: {SURFACE_SOFT};
+            color: {TEXT_MUTED};
+            border: none;
+            border-bottom: 2px solid transparent;
+            font-family: "Microsoft YaHei UI", "Segoe UI Variable", sans-serif;
+            font-size: 13px;
+            font-weight: 500;
+            min-width: 60px;
+        }
+        QTabBar::tab:selected {
+            background: {WHITE};
+            color: {ACCENT};
+            border-bottom: 2.5px solid {ACCENT};
+        }
+        QTabBar::tab:hover:!selected {
+            background: {ACCENT_LIGHT};
+            color: {ACCENT};
+        }
+        """,
+        _STYLE_TOKENS,
+    )
+
+    APPEARANCE_COMBO_STYLE = _resolve_style_tokens(
+        """
+        QComboBox {
+            padding: 8px 12px;
+            font-size: 13px;
+            border: 1.5px solid {BORDER_SOFT};
+            border-radius: 10px;
+            background: {SURFACE_SOFT};
+            color: {TEXT_PRIMARY};
+        }
+        QComboBox:focus { border-color: {ACCENT}; }
+        QComboBox::drop-down { border: none; }
+        QComboBox::down-arrow { width: 12px; height: 12px; }
+        """,
+        _STYLE_TOKENS,
+    )
+
+    IMAGE_PATH_INPUT_STYLE = _resolve_style_tokens(
+        "padding: 8px 12px; font-size: 13px; border: 1.5px solid {BORDER_SOFT}; border-radius: 10px; background: {SURFACE_SOFT};",
+        _STYLE_TOKENS,
+    )
+
+    BROWSE_BUTTON_STYLE = _resolve_style_tokens(
+        "QPushButton { background: {SURFACE_MUTED}; color: {TEXT_TERTIARY}; border: none; border-radius: 10px; font-size: 13px; padding: 8px 12px; }"
+        "QPushButton:hover { background: {ACCENT_LIGHT}; color: {ACCENT}; }",
+        _STYLE_TOKENS,
+    )
+
+    FOOTER_BUTTON_CONTAINER_STYLE = _resolve_style_tokens(
+        "background: {SURFACE_SOFT}; border-top: 1px solid rgba(148, 163, 184, 0.2);",
+        _STYLE_TOKENS,
+    )
+
+    SAVE_BUTTON_STYLE = _resolve_style_tokens(
+        """
+        QPushButton {
+            background: {ACCENT};
+            color: white;
+            padding: 10px 36px;
+            font-size: 13px;
+            font-weight: 600;
+            border: none;
+            border-radius: 10px;
+        }
+        QPushButton:hover {
+            background: {ACCENT_HOVER};
+        }
+        """,
+        _STYLE_TOKENS,
+    )
+
+    CANCEL_BUTTON_STYLE = _resolve_style_tokens(
+        """
+        QPushButton {
+            background: {SURFACE_MUTED};
+            color: {TEXT_TERTIARY};
+            padding: 10px 36px;
+            font-size: 13px;
+            font-weight: 500;
+            border: none;
+            border-radius: 10px;
+        }
+        QPushButton:hover {
+            background: {ACCENT_LIGHT};
+            color: {ACCENT};
+        }
+        """,
+        _STYLE_TOKENS,
+    )
+
+    @staticmethod
+    def transparent_object_style(object_name: str) -> str:
+        return f"#{object_name} {{ background: transparent; border: none; }}"
+
+    @staticmethod
+    def color_preview_button_style(color: str) -> str:
+        return (
+            f"background: {color}; border: 1.5px solid rgba(148, 163, 184, 0.3); "
+            f"border-radius: 8px;"
+        )
 
     MODERN_STYLE = """
     QWidget#mainPanel {
@@ -508,7 +704,7 @@ class MainPanel(QWidget):
 
         # -- App grid page --
         self.app_grid_widget = QWidget()
-        self.app_grid_widget.setStyleSheet("background: transparent;")
+        self.app_grid_widget.setStyleSheet(ModernStyle.TRANSPARENT_BG_STYLE)
         self.app_grid_layout = QVBoxLayout(self.app_grid_widget)
         self.app_grid_layout.setContentsMargins(0, 0, 0, 0)
         self.app_grid_layout.setSpacing(10)
@@ -517,10 +713,10 @@ class MainPanel(QWidget):
         app_scroll.setWidgetResizable(True)
         app_scroll.setFrameShape(QFrame.NoFrame)
         app_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        app_scroll.setStyleSheet("background: transparent;")
+        app_scroll.setStyleSheet(ModernStyle.TRANSPARENT_BG_STYLE)
 
         app_container = QWidget()
-        app_container.setStyleSheet("background: transparent;")
+        app_container.setStyleSheet(ModernStyle.TRANSPARENT_BG_STYLE)
         self.app_grid = QGridLayout(app_container)
         # 设置网格间距，确保图标之间间距一致
         self.app_grid.setSpacing(8)
@@ -539,34 +735,11 @@ class MainPanel(QWidget):
 
         # -- Search results page --
         self.search_results_widget = QWidget()
-        self.search_results_widget.setStyleSheet("background: transparent;")
+        self.search_results_widget.setStyleSheet(ModernStyle.TRANSPARENT_BG_STYLE)
         search_results_layout = QVBoxLayout(self.search_results_widget)
         search_results_layout.setContentsMargins(0, 0, 0, 0)
 
         self.search_results = QListWidget()
-        self.search_results.setStyleSheet("""
-            QListWidget {
-                border: none;
-                background: transparent;
-                outline: none;
-            }
-            QListWidget::item {
-                padding: 10px 14px;
-                border-radius: 10px;
-                margin: 2px 4px;
-                background: transparent;
-                color: #334155;
-                font-family: "Segoe UI Variable", "Microsoft YaHei UI", sans-serif;
-                font-size: 13px;
-            }
-            QListWidget::item:hover {
-                background: rgba(99, 102, 241, 0.06);
-            }
-            QListWidget::item:selected {
-                background: #6366f1;
-                color: #ffffff;
-            }
-        """)
         self.search_results.setSpacing(1)
         self.search_results.itemDoubleClicked.connect(self._on_search_result_clicked)
         search_results_layout.addWidget(self.search_results)
@@ -789,30 +962,7 @@ class MainPanel(QWidget):
     def _show_app_context_menu(self, pos, button, app):
         """Show context menu for app button"""
         menu = QMenu(self)
-        menu.setStyleSheet("""
-            QMenu {
-                background: #ffffff;
-                border: 1px solid rgba(148, 163, 184, 0.25);
-                border-radius: 10px;
-                padding: 6px;
-            }
-            QMenu::item {
-                padding: 8px 20px 8px 14px;
-                border-radius: 6px;
-                color: #334155;
-                font-family: "Segoe UI Variable", "Microsoft YaHei UI", sans-serif;
-                font-size: 13px;
-            }
-            QMenu::item:selected {
-                background: rgba(99, 102, 241, 0.08);
-                color: #4f46e5;
-            }
-            QMenu::separator {
-                height: 1px;
-                background: #f1f5f9;
-                margin: 4px 8px;
-            }
-        """)
+        menu.setStyleSheet(ModernStyle.APP_MENU_STYLE)
         
         edit_action = menu.addAction("✏️  编辑")
         edit_action.triggered.connect(lambda: self._edit_app(app))
@@ -937,25 +1087,7 @@ class MainPanel(QWidget):
         """Handle add app button click"""
         try:
             menu = QMenu(self)
-            menu.setStyleSheet("""
-                QMenu {
-                    background: #ffffff;
-                    border: 1px solid rgba(148, 163, 184, 0.25);
-                    border-radius: 10px;
-                    padding: 6px;
-                }
-                QMenu::item {
-                    padding: 8px 20px 8px 14px;
-                    border-radius: 6px;
-                    color: #334155;
-                    font-family: "Segoe UI Variable", "Microsoft YaHei UI", sans-serif;
-                    font-size: 13px;
-                }
-                QMenu::item:selected {
-                    background: rgba(99, 102, 241, 0.08);
-                    color: #4f46e5;
-                }
-            """)
+            menu.setStyleSheet(ModernStyle.ADD_MENU_STYLE)
             
             add_app_action = menu.addAction("📦  添加应用程序")
             add_folder_action = menu.addAction("📂  添加文件夹")
@@ -1010,33 +1142,7 @@ class MainPanel(QWidget):
         main_layout.setContentsMargins(0, 0, 0, 0)
         
         tab_widget = QTabWidget()
-        tab_widget.setStyleSheet("""
-            QTabWidget::pane {
-                border: none;
-                background: #ffffff;
-            }
-            QTabBar::tab {
-                padding: 10px 24px;
-                margin: 0;
-                background: #f8fafc;
-                color: #64748b;
-                border: none;
-                border-bottom: 2px solid transparent;
-                font-family: "Microsoft YaHei UI", "Segoe UI Variable", sans-serif;
-                font-size: 13px;
-                font-weight: 500;
-                min-width: 60px;
-            }
-            QTabBar::tab:selected {
-                background: #ffffff;
-                color: #6366f1;
-                border-bottom: 2.5px solid #6366f1;
-            }
-            QTabBar::tab:hover:!selected {
-                background: #eef2ff;
-                color: #6366f1;
-            }
-        """)
+        tab_widget.setStyleSheet(ModernStyle.SETTINGS_TAB_STYLE)
         
         general_widget = QWidget()
         general_layout = QVBoxLayout(general_widget)
@@ -1045,7 +1151,7 @@ class MainPanel(QWidget):
         
         form_widget = QWidget()
         form_widget.setObjectName("generalForm")
-        form_widget.setStyleSheet("#generalForm { background: transparent; border: none; }")
+        form_widget.setStyleSheet(ModernStyle.transparent_object_style("generalForm"))
         form_layout = QFormLayout(form_widget)
         # 设置表单间距，确保标签和控件之间有足够的空间
         form_layout.setSpacing(16)
@@ -1181,7 +1287,7 @@ class MainPanel(QWidget):
                     
                     settings_form = QWidget()
                     settings_form.setObjectName("pluginSettingsForm")
-                    settings_form.setStyleSheet("#pluginSettingsForm { background: transparent; border: none; }")
+                    settings_form.setStyleSheet(ModernStyle.transparent_object_style("pluginSettingsForm"))
                     settings_layout = QFormLayout(settings_form)
                     # 设置表单间距，确保标签和控件之间有足够的空间
                     settings_layout.setSpacing(12)
@@ -1243,7 +1349,10 @@ class MainPanel(QWidget):
         # -- Background type ---
         bg_type_label = QLabel("背景类型")
         # 设置样式，确保文字显示完整，移除线框
-        bg_type_label.setStyleSheet("font-size: 13px; font-weight: 600; color: #0f172a; background: transparent; border: none;")
+        bg_type_label.setStyleSheet(
+            f"font-size: 13px; font-weight: 600; color: {ModernStyle.TEXT_PRIMARY}; "
+            f"{ModernStyle.TRANSPARENT_SECTION_STYLE}"
+        )
         appearance_layout.addWidget(bg_type_label)
 
         bg_type_combo = QComboBox()
@@ -1255,15 +1364,7 @@ class MainPanel(QWidget):
                 bg_type_combo.setCurrentIndex(idx)
                 break
         # 设置样式，确保文字显示完整，移除线框
-        bg_type_combo.setStyleSheet("""
-            QComboBox {
-                padding: 8px 12px; font-size: 13px; border: 1.5px solid #e2e8f0;
-                border-radius: 10px; background: #f8fafc; color: #0f172a;
-            }
-            QComboBox:focus { border-color: #6366f1; }
-            QComboBox::drop-down { border: none; }
-            QComboBox::down-arrow { width: 12px; height: 12px; }
-        """)
+        bg_type_combo.setStyleSheet(ModernStyle.APPEARANCE_COMBO_STYLE)
         appearance_layout.addWidget(bg_type_combo)
 
         def _make_color_btn(config_key: str, default: str) -> QPushButton:
@@ -1271,7 +1372,7 @@ class MainPanel(QWidget):
             btn = QPushButton()
             btn.setFixedSize(100, 32)
             btn.setCursor(Qt.PointingHandCursor)
-            btn.setStyleSheet(f"background: {color}; border: 1.5px solid rgba(148, 163, 184, 0.3); border-radius: 8px;")
+            btn.setStyleSheet(ModernStyle.color_preview_button_style(color))
             btn.setProperty("color_value", color)
 
             def pick(checked=False, b=btn, key=config_key):
@@ -1280,7 +1381,7 @@ class MainPanel(QWidget):
                 if chosen.isValid():
                     hex_color = chosen.name()
                     b.setProperty("color_value", hex_color)
-                    b.setStyleSheet(f"background: {hex_color}; border: 1.5px solid rgba(148, 163, 184, 0.3); border-radius: 8px;")
+                    b.setStyleSheet(ModernStyle.color_preview_button_style(hex_color))
 
             btn.clicked.connect(pick)
             return btn
@@ -1288,7 +1389,7 @@ class MainPanel(QWidget):
         # -- Solid color --
         solid_widget = QWidget()
         solid_widget.setObjectName("solidColorSection")
-        solid_widget.setStyleSheet("#solidColorSection { background: transparent; border: none; }")
+        solid_widget.setStyleSheet(ModernStyle.transparent_object_style("solidColorSection"))
         solid_layout = QFormLayout(solid_widget)
         # 设置表单间距，确保标签和控件之间有足够的空间
         solid_layout.setSpacing(12)
@@ -1299,7 +1400,9 @@ class MainPanel(QWidget):
         solid_layout.setContentsMargins(0, 0, 0, 0)
         # 创建标签并设置样式，确保文字显示完整
         solid_label = QLabel("背景颜色:")
-        solid_label.setStyleSheet("font-size: 13px; color: #334155; background: transparent; border: none;")
+        solid_label.setStyleSheet(
+            f"font-size: 13px; color: {ModernStyle.TEXT_SECONDARY}; {ModernStyle.TRANSPARENT_SECTION_STYLE}"
+        )
         solid_color_btn = _make_color_btn("appearance.background_color", "#f8fafc")
         solid_layout.addRow(solid_label, solid_color_btn)
         appearance_layout.addWidget(solid_widget)
@@ -1307,7 +1410,7 @@ class MainPanel(QWidget):
         # -- Image picker --
         image_widget = QWidget()
         image_widget.setObjectName("imagePickerSection")
-        image_widget.setStyleSheet("#imagePickerSection { background: transparent; border: none; }")
+        image_widget.setStyleSheet(ModernStyle.transparent_object_style("imagePickerSection"))
         image_layout = QHBoxLayout(image_widget)
         image_layout.setContentsMargins(0, 0, 0, 0)
         image_layout.setSpacing(8)
@@ -1316,15 +1419,12 @@ class MainPanel(QWidget):
         image_path_input.setReadOnly(True)
         image_path_input.setPlaceholderText("选择图片文件…")
         # 设置样式，确保文字显示完整
-        image_path_input.setStyleSheet("padding: 8px 12px; font-size: 13px; border: 1.5px solid #e2e8f0; border-radius: 10px; background: #f8fafc;")
+        image_path_input.setStyleSheet(ModernStyle.IMAGE_PATH_INPUT_STYLE)
         browse_btn = QPushButton("浏览")
         browse_btn.setFixedSize(70, 36)
         browse_btn.setCursor(Qt.PointingHandCursor)
         # 设置样式，确保按钮文字显示完整
-        browse_btn.setStyleSheet(
-            "QPushButton { background: #f1f5f9; color: #475569; border: none; border-radius: 10px; font-size: 13px; padding: 8px 12px; }"
-            "QPushButton:hover { background: #eef2ff; color: #6366f1; }"
-        )
+        browse_btn.setStyleSheet(ModernStyle.BROWSE_BUTTON_STYLE)
 
         def pick_image():
             path, _ = QFileDialog.getOpenFileName(
@@ -1342,9 +1442,13 @@ class MainPanel(QWidget):
         # -- Accent color --
         accent_label = QLabel("主题强调色")
         # 设置样式，确保文字显示完整，移除线框
-        accent_label.setStyleSheet("font-size: 13px; font-weight: 600; color: #0f172a; margin-top: 8px; background: transparent; border: none;")
+        accent_label.setStyleSheet(
+            f"font-size: 13px; font-weight: 600; color: {ModernStyle.TEXT_PRIMARY}; "
+            "margin-top: 8px; "
+            f"{ModernStyle.TRANSPARENT_SECTION_STYLE}"
+        )
         appearance_layout.addWidget(accent_label)
-        accent_color_btn = _make_color_btn("appearance.accent_color", "#6366f1")
+        accent_color_btn = _make_color_btn("appearance.accent_color", ModernStyle.ACCENT)
         appearance_layout.addWidget(accent_color_btn)
 
         # Show/hide sub-sections based on bg_type_combo selection
@@ -1363,46 +1467,19 @@ class MainPanel(QWidget):
         main_layout.addWidget(tab_widget)
         
         button_container = QWidget()
-        button_container.setStyleSheet("background: #f8fafc; border-top: 1px solid rgba(148, 163, 184, 0.2);")
+        button_container.setStyleSheet(ModernStyle.FOOTER_BUTTON_CONTAINER_STYLE)
         button_layout = QHBoxLayout(button_container)
         button_layout.setContentsMargins(24, 14, 24, 14)
         button_layout.addStretch()
         
         save_btn = QPushButton("保存")
         save_btn.setCursor(Qt.PointingHandCursor)
-        save_btn.setStyleSheet("""
-            QPushButton {
-                background: #6366f1;
-                color: white;
-                padding: 10px 36px;
-                font-size: 13px;
-                font-weight: 600;
-                border: none;
-                border-radius: 10px;
-            }
-            QPushButton:hover {
-                background: #4f46e5;
-            }
-        """)
+        save_btn.setStyleSheet(ModernStyle.SAVE_BUTTON_STYLE)
         save_btn.clicked.connect(dialog.accept)
         
         cancel_btn = QPushButton("取消")
         cancel_btn.setCursor(Qt.PointingHandCursor)
-        cancel_btn.setStyleSheet("""
-            QPushButton {
-                background: #f1f5f9;
-                color: #475569;
-                padding: 10px 36px;
-                font-size: 13px;
-                font-weight: 500;
-                border: none;
-                border-radius: 10px;
-            }
-            QPushButton:hover {
-                background: #eef2ff;
-                color: #6366f1;
-            }
-        """)
+        cancel_btn.setStyleSheet(ModernStyle.CANCEL_BUTTON_STYLE)
         cancel_btn.clicked.connect(dialog.reject)
         
         button_layout.addWidget(cancel_btn)
@@ -1573,9 +1650,15 @@ class MainPanel(QWidget):
             
             if enabled:
                 exe_path = sys.executable
-                if exe_path.endswith("python.exe"):
+                exe_name = os.path.basename(exe_path).lower()
+                if exe_name in ("python.exe", "pythonw.exe"):
                     script_path = os.path.abspath("main.py")
-                    value = f'"{exe_path}" "{script_path}"'
+                    launcher_path = exe_path
+                    if exe_name == "python.exe":
+                        pythonw_path = str(Path(exe_path).with_name("pythonw.exe"))
+                        if os.path.exists(pythonw_path):
+                            launcher_path = pythonw_path
+                    value = f'"{launcher_path}" "{script_path}"'
                 else:
                     value = f'"{exe_path}"'
                 winreg.SetValueEx(key, "Larj", 0, winreg.REG_SZ, value)

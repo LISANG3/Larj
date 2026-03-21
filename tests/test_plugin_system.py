@@ -141,6 +141,12 @@ class TestPluginSystem:
         assert plugin_system.plugins == {}
         assert plugin_system.discovered_plugins == {}
 
+    def test_config_manager_uses_settings_for_enabled_plugins(self, setup_test_env):
+        config_manager = ConfigManager()
+
+        assert config_manager.get("plugin.enabled_plugins", []) == []
+        assert not (Path(setup_test_env) / "config" / "plugins.json").exists()
+
     def test_discover_single_file_plugin(self, setup_test_env):
         # Write a test plugin file
         plugin_code = '''
@@ -331,6 +337,7 @@ class TogglePlugin(PluginBase):
         config = plugin_system.get_plugin_config("my_plugin")
         assert config["key1"] == "val1"
         assert config["key2"] == "updated"
+        assert not (Path(setup_test_env) / "config" / "plugins.json").exists()
 
     def test_plugin_isolation_on_error(self, setup_test_env):
         """Plugin errors should not crash the system"""

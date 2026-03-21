@@ -77,16 +77,22 @@ PluginBase (基类)
 
 ### 配置存储
 
-插件配置采用**独立文件存储**机制：
+插件配置采用**主配置 + 独立文件**机制：
 
 ```
 config/
-├── settings.json           # 主配置 (包含 enabled_plugins 列表)
-└── plugins/               # 插件独立配置目录
-    ├── mtran_server.json  # 翻译插件配置
-    ├── tencentocr.json    # OCR 插件配置
-    └── my_plugin.json     # 自定义插件配置
+├── settings.json           # 主配置（plugin.enabled_plugins / plugin.plugin_directory）
+├── plugins/                # 插件独立配置目录（每个插件一个 JSON）
+│   ├── mtran_server.json   # 翻译插件配置
+│   ├── ocr.json            # OCR 插件配置
+│   └── my_plugin.json      # 自定义插件配置
+└── plugins.json            # legacy：仅用于旧版迁移来源，不作为当前主路径
 ```
+
+其中：
+
+- 插件启用列表读取自 `config/settings.json` 的 `plugin.enabled_plugins`
+- 插件运行时配置读取/写入 `config/plugins/{plugin_id}.json`
 
 ## 快速开始
 

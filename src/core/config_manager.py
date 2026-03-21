@@ -77,12 +77,10 @@ class ConfigManager(QObject):
         # Config files
         self.settings_file = self.config_dir / "settings.json"
         self.apps_file = self.config_dir / "apps.json"
-        self.plugins_file = self.config_dir / "plugins.json"
         
         # Load configurations
         self.settings = self._load_or_create(self.settings_file, self.DEFAULT_CONFIG)
         self.apps = self._load_or_create(self.apps_file, {"apps": []})
-        self.plugins = self._load_or_create(self.plugins_file, {"plugins": {}})
         
         self.logger.info("ConfigManager initialized")
     
@@ -168,15 +166,6 @@ class ConfigManager(QObject):
             self.logger.debug("Apps data saved")
         except Exception as e:
             self.logger.error(f"Failed to save apps data: {e}")
-    
-    def save_plugins(self):
-        """Save plugin data to file"""
-        try:
-            with open(self.plugins_file, 'w', encoding='utf-8') as f:
-                json.dump(self.plugins, f, indent=2, ensure_ascii=False)
-            self.logger.debug("Plugins data saved")
-        except Exception as e:
-            self.logger.error(f"Failed to save plugins data: {e}")
     
     def update_config(self, config_data: Dict):
         """Update configuration with new data"""

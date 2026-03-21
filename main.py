@@ -6,6 +6,7 @@ Main entry point
 """
 
 import sys
+import os
 import logging
 from pathlib import Path
 
@@ -51,6 +52,14 @@ def setup_logging():
 
 def main():
     """Main entry point"""
+    # Ensure working directory is the application directory
+    # This is critical for autostart where CWD might be System32
+    if getattr(sys, 'frozen', False):
+        app_dir = os.path.dirname(sys.executable)
+    else:
+        app_dir = os.path.dirname(os.path.abspath(__file__))
+    os.chdir(app_dir)
+
     setup_logging()
     logger = logging.getLogger(__name__)
     logger.info("Starting Larj application...")

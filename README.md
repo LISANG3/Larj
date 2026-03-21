@@ -99,7 +99,9 @@ Larj/
 ├── config/                 # 配置文件目录
 │   ├── settings.json       # 主配置
 │   ├── apps.json          # 应用数据
-│   └── plugins.json       # 插件配置
+│   └── plugins/           # 插件独立配置
+│       ├── mtran_server.json
+│       └── ocr.json
 │
 ├── everything/            # Everything 搜索引擎
 │   ├── es.exe            # 命令行工具 (需下载)
@@ -204,7 +206,7 @@ Larj 提供可扩展的插件架构，支持自定义功能扩展。
 
 1. 在 `plugins/` 目录创建插件文件
 2. 继承 `PluginBase` 类并实现必需方法
-3. 在 `config/settings.json` 中启用插件
+3. 在 `config/settings.json` 的 `plugin.enabled_plugins` 中启用插件
 
 ```python
 from src.core.plugin_system import PluginBase
@@ -254,20 +256,25 @@ def create_plugin():
     "sort_by": "usage"
   },
   "plugin": {
-    "enabled_plugins": ["mtran_server", "ocr"]
-  },
-  "plugins": {
-    "mtran_server": {
-      "secret_id": "your_secret_id",
-      "secret_key": "your_secret_key",
-      "region": "ap-beijing"
-    },
-    "TencentOcr": {
-      "secret_id": "your_secret_id",
-      "secret_key": "your_secret_key",
-      "region": "ap-beijing"
-    }
+    "enabled_plugins": ["mtran_server", "ocr"],
+    "plugin_directory": "plugins"
   }
+}
+```
+
+插件配置采用“主配置 + 独立配置”结构：
+
+- 插件启用列表：`config/settings.json` → `plugin.enabled_plugins`
+- 插件独立配置：`config/plugins/{plugin_id}.json`
+- 旧版迁移来源（legacy）：`config/plugins.json`（仅用于历史数据迁移，不再作为当前主配置）
+
+插件独立配置示例（`config/plugins/{plugin_id}.json`）：
+
+```json
+{
+  "secret_id": "your_secret_id",
+  "secret_key": "your_secret_key",
+  "region": "ap-beijing"
 }
 ```
 
