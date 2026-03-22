@@ -287,6 +287,8 @@ class SearchEngine(QObject):
     
     def cancel_search(self):
         """Cancel current search"""
+        self.debounce_timer.stop()
+        self.pending_keyword = ""
         if self.current_worker and self.current_worker.isRunning():
             self.current_worker.terminate()
             self.current_worker.wait()

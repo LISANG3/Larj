@@ -7,7 +7,7 @@ Handles window display, positioning, animations, and interactions
 
 import logging
 from PyQt5.QtCore import Qt, QPoint, QPropertyAnimation, QEasingCurve
-from PyQt5.QtWidgets import QWidget, QApplication
+from PyQt5.QtWidgets import QApplication
 from PyQt5.QtGui import QCursor
 
 from src.ui.main_panel import MainPanel
@@ -31,7 +31,7 @@ class WindowManager:
         # Window properties
         self.width = 600
         self.height = 400
-        self.opacity = 0.95
+        self.opacity = 1.0
         self.corner_radius = 10
         self.follow_mouse = True
         self.animation_duration = 200
@@ -49,7 +49,8 @@ class WindowManager:
         try:
             self.width = self.config_manager.get("window.width", 600)
             self.height = self.config_manager.get("window.height", 400)
-            self.opacity = self.config_manager.get("window.opacity", 95) / 100.0
+            configured_opacity = self.config_manager.get("window.opacity", 100)
+            self.opacity = max(0.0, min(1.0, float(configured_opacity) / 100.0))
             self.corner_radius = self.config_manager.get("window.corner_radius", 10)
             self.follow_mouse = self.config_manager.get("window.follow_mouse", True)
             self.animation_duration = self.config_manager.get("window.animation_duration", 200)
@@ -85,10 +86,10 @@ class WindowManager:
                 Qt.Tool
             )
             
-            # 启用透明背景属性，使圆角窗口能够正确渲染
-            # 这是解决窗口边角黑色直角的关键
-            self.window.setAttribute(Qt.WA_TranslucentBackground, True)
+            # 保持顶层窗口走不透明渲染链路，圆角由 mask 控制。
+            self.window.setAttribute(Qt.WA_TranslucentBackground, False)
             self.window.setAttribute(Qt.WA_ShowWithoutActivating, False)
+            self.window.refresh_window_shape()
             
             self.logger.info("Main panel window created")
             
@@ -101,14 +102,19 @@ class WindowManager:
         try:
             if self.window.isVisible():
                 return
+
+            self.window.reset_panel_state()
             
             # Position window
             self._position_window()
             
             # Show window
             self.window.show()
+            self.window.update()
+            self.window.repaint()
             self.window.activateWindow()
             self.window.raise_()
+            self.window.ensure_fresh_show_state()
             
             # Focus search box
             self.window.focus_search()
@@ -127,7 +133,7 @@ class WindowManager:
             self.window.hide()
             
             # Clear search
-            self.window.clear_search()
+            self.window.reset_panel_state()
             
             self.logger.debug("Window hidden")
             

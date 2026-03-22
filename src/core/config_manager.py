@@ -30,7 +30,7 @@ class ConfigManager(QObject):
         "window": {
             "width": 480,
             "height": 360,
-            "opacity": 95,
+            "opacity": 100,
             "corner_radius": 10,
             "follow_mouse": True,
             "animation_duration": 200

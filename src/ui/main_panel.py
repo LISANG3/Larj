@@ -13,11 +13,11 @@ from PyQt5.QtWidgets import (
     QWidget, QApplication, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton,
     QScrollArea, QLabel, QGridLayout, QListWidget, QListWidgetItem,
     QStackedWidget, QFrame, QDialog, QDialogButtonBox, QFormLayout,
-    QCheckBox, QSpinBox, QFileDialog, QMessageBox, QGraphicsDropShadowEffect,
+    QCheckBox, QSpinBox, QFileDialog, QMessageBox,
     QMenu, QAction, QInputDialog, QColorDialog, QComboBox, QToolButton
 )
-from PyQt5.QtCore import Qt, pyqtSignal, QTimer, QMimeData, QPoint, QSize
-from PyQt5.QtGui import QIcon, QPixmap, QFont, QColor, QPalette, QLinearGradient, QBrush, QPainter, QPen, QDrag
+from PyQt5.QtCore import Qt, pyqtSignal, QTimer, QMimeData, QPoint, QSize, QRectF
+from PyQt5.QtGui import QIcon, QPixmap, QFont, QColor, QPalette, QLinearGradient, QBrush, QPainter, QPen, QDrag, QPainterPath, QRegion
 from pynput import mouse
 from src.core.hotkey_listener import detect_hotkey, DEFAULT_TRIGGER_KEY
 
@@ -661,6 +661,7 @@ class MainPanel(QWidget):
         self._settings_dialog = None
         self._mouse_listener = None
         self._bg_pixmap_cache = None  # ((path, width, height), scaled_pixmap)
+        self._accept_search_results = False
         
         self._setup_ui()
         self._connect_signals()
@@ -685,6 +686,8 @@ class MainPanel(QWidget):
         # Search box with search icon drawn via paintEvent overlay
         self.search_box = QLineEdit()
         self.search_box.setObjectName("searchBox")
+        self.search_box.setAttribute(Qt.WA_StyledBackground, True)
+        self.search_box.setAutoFillBackground(True)
         self.search_box.setPlaceholderText("🔍  搜索文件或输入命令…")
         self.search_box.setMinimumHeight(38)
         header_layout.addWidget(self.search_box, 1)
@@ -735,11 +738,20 @@ class MainPanel(QWidget):
 
         # -- Search results page --
         self.search_results_widget = QWidget()
-        self.search_results_widget.setStyleSheet(ModernStyle.TRANSPARENT_BG_STYLE)
+        self.search_results_widget.setObjectName("searchResultsWidget")
+        self.search_results_widget.setAttribute(Qt.WA_StyledBackground, True)
+        self.search_results_widget.setStyleSheet(
+            "QWidget#searchResultsWidget { background: rgba(248, 250, 252, 0.97); border-radius: 12px; }"
+        )
         search_results_layout = QVBoxLayout(self.search_results_widget)
         search_results_layout.setContentsMargins(0, 0, 0, 0)
 
         self.search_results = QListWidget()
+        self.search_results.setAttribute(Qt.WA_StyledBackground, True)
+        self.search_results.setStyleSheet(
+            "QListWidget { background: rgba(248, 250, 252, 0.98); border: none; outline: none; }"
+            "QListWidget::item { background: transparent; }"
+        )
         self.search_results.setSpacing(1)
         self.search_results.itemDoubleClicked.connect(self._on_search_result_clicked)
         search_results_layout.addWidget(self.search_results)
@@ -767,13 +779,6 @@ class MainPanel(QWidget):
         self._update_memory_usage()
 
         self.setStyleSheet(ModernStyle.MODERN_STYLE)
-
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(30)
-        shadow.setXOffset(0)
-        shadow.setYOffset(6)
-        shadow.setColor(QColor(0, 0, 0, 50))
-        self.setGraphicsEffect(shadow)
     
     def _connect_signals(self):
         """Connect UI signals"""
@@ -783,10 +788,13 @@ class MainPanel(QWidget):
     def _on_search_changed(self, text: str):
         """Handle search box text change"""
         if text.strip():
+            self._accept_search_results = True
             self.stacked_widget.setCurrentWidget(self.search_results_widget)
             self.search_engine.search(text)
         else:
+            self._accept_search_results = False
             self.stacked_widget.setCurrentWidget(self.app_grid_widget)
+            self.search_results.clear()
     
     def _load_apps(self):
         """Load applications and plugins into grid"""
@@ -1080,6 +1088,7 @@ class MainPanel(QWidget):
         try:
             self.application_manager.launch_app(app)
             self.hide()
+            self.reset_panel_state()
         except Exception as e:
             self.logger.error(f"Failed to launch app: {e}", exc_info=True)
     
@@ -1537,6 +1546,15 @@ class MainPanel(QWidget):
     def update_search_results(self, results: list):
         """Update search results list"""
         try:
+            if not self.isVisible():
+                return
+            if not self._accept_search_results:
+                return
+            if not self.search_box.text().strip():
+                return
+            if self.stacked_widget.currentWidget() is not self.search_results_widget:
+                return
+
             self.search_results.clear()
             
             for result in results:
@@ -1564,6 +1582,7 @@ class MainPanel(QWidget):
                 subprocess.Popen(['xdg-open', path])
             
             self.hide()
+            self.reset_panel_state()
             self.logger.info(f"Opened file: {path}")
             
         except Exception as e:
@@ -1576,14 +1595,69 @@ class MainPanel(QWidget):
     
     def clear_search(self):
         """Clear search box and results"""
+        self._apply_home_view_state()
+
+    def reset_panel_state(self):
+        """Reset panel state to app grid with clean search context."""
+        self._accept_search_results = False
+        self.search_engine.cancel_search()
+        self._apply_home_view_state()
+        self._load_apps()
+        self.update()
+        self.repaint()
+
+    def _apply_home_view_state(self):
+        """Force panel to home view and clear transient search UI."""
+        self._accept_search_results = False
+        self.search_box.blockSignals(True)
         self.search_box.clear()
+        self.search_box.blockSignals(False)
         self.search_results.clear()
         self.stacked_widget.setCurrentWidget(self.app_grid_widget)
+        self.search_results_widget.update()
+        self.search_results_widget.repaint()
+
+    def ensure_fresh_show_state(self):
+        """Second-stage lock after show to avoid stale async UI rollback."""
+        self._apply_home_view_state()
+        self.update()
+        self.repaint()
+
+    def refresh_window_shape(self):
+        """Refresh rounded window mask to keep the top-level shape stable."""
+        self._update_window_mask()
+        self.update()
+
+    def _update_window_mask(self):
+        """Apply rounded mask at window level to avoid translucent pipeline artifacts."""
+        if self.width() <= 0 or self.height() <= 0:
+            return
+
+        radius = int(self.config_manager.get("window.corner_radius", 10))
+        rounded_path = QPainterPath()
+        rounded_path.addRoundedRect(QRectF(self.rect()), radius, radius)
+        region = QRegion(rounded_path.toFillPolygon().toPolygon())
+        self.setMask(region)
+
+    def showEvent(self, event):
+        """Ensure each open starts from a fresh home state."""
+        super().showEvent(event)
+        self._update_window_mask()
+        self.ensure_fresh_show_state()
+        self._load_apps()
+        QTimer.singleShot(0, self.ensure_fresh_show_state)
+
+    def resizeEvent(self, event):
+        """Keep rounded window mask synced with current size."""
+        super().resizeEvent(event)
+        self._bg_pixmap_cache = None
+        self._update_window_mask()
     
     def keyPressEvent(self, event):
         """Handle key press events"""
         if event.key() == Qt.Key_Escape:
             self.hide()
+            self.reset_panel_state()
         else:
             super().keyPressEvent(event)
 
@@ -1598,7 +1672,8 @@ class MainPanel(QWidget):
                 if not hide_on_focus_loss:
                     return
                 
-                local_pos = self.mapFromGlobal(self.cursor().pos())
+                click_global = QPoint(int(x), int(y))
+                local_pos = self.mapFromGlobal(click_global)
                 in_window = self.rect().contains(local_pos)
                 settings_visible = self._settings_dialog and self._settings_dialog.isVisible()
                 
@@ -1612,7 +1687,7 @@ class MainPanel(QWidget):
     def _hide_and_clear(self):
         """Hide window and clear search (called from mouse listener thread)"""
         self.hide()
-        self.clear_search()
+        self.reset_panel_state()
 
     def _is_autostart_enabled(self) -> bool:
         """Check if autostart is enabled in Windows registry"""
@@ -1686,19 +1761,12 @@ class MainPanel(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
 
-        # 先将整个窗口区域清为透明，确保圆角区域外的像素没有灰色残留
-        # （WA_TranslucentBackground + QGraphicsDropShadowEffect 组合时易出现灰角）
-        painter.setCompositionMode(QPainter.CompositionMode_Clear)
-        painter.fillRect(self.rect(), Qt.transparent)
-        painter.setCompositionMode(QPainter.CompositionMode_SourceOver)
-
         bg_type = self.config_manager.get("appearance.background_type", "solid")
         bg_color = self.config_manager.get("appearance.background_color", "#f8fafc")
 
-        from PyQt5.QtGui import QPainterPath
-        from PyQt5.QtCore import QRectF
+        radius = int(self.config_manager.get("window.corner_radius", 10))
         rounded_path = QPainterPath()
-        rounded_path.addRoundedRect(QRectF(self.rect()), 18, 18)
+        rounded_path.addRoundedRect(QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5), radius, radius)
         painter.setClipPath(rounded_path)
 
         if bg_type == "image":
@@ -1719,27 +1787,27 @@ class MainPanel(QWidget):
                     else:
                         scaled = None
                 if scaled is not None:
-                    painter.drawPixmap(0, 0, scaled)
+                    painter.drawPixmap(self.rect(), scaled)
                     painter.setPen(QPen(QColor(148, 163, 184, 64), 1))
                     painter.setBrush(Qt.NoBrush)
-                    painter.drawRoundedRect(self.rect().adjusted(0, 0, -1, -1), 18, 18)
+                    painter.drawPath(rounded_path)
                     return
 
         color = QColor(bg_color)
         painter.setBrush(QBrush(color))
         painter.setPen(Qt.NoPen)
-        painter.drawRect(self.rect())
+        painter.drawPath(rounded_path)
 
         painter.setPen(QPen(QColor(148, 163, 184, 64), 1))
         painter.setBrush(Qt.NoBrush)
-        painter.drawRoundedRect(self.rect().adjusted(0, 0, -1, -1), 18, 18)
+        painter.drawPath(rounded_path)
 
     def focusOutEvent(self, event):
         """Hide the panel when focus is lost by clicking outside."""
         hide_on_focus_loss = self.config_manager.get("window.hide_on_focus_loss", True)
         if hide_on_focus_loss and not (self._settings_dialog and self._settings_dialog.isVisible()):
             self.hide()
-            self.clear_search()
+            self.reset_panel_state()
         super().focusOutEvent(event)
 
     def _update_memory_usage(self):
