@@ -69,9 +69,29 @@ build.bat
 pyinstaller larj.spec --clean
 ```
 
-打包完成后，可执行文件位于 `dist/Larj.exe`。
+运行 `build.bat` 时会先读取根目录 `VERSION`，并让你选择版本更新方式：`patch`（默认）、`minor`、`major`、`keep` 或手动输入完整版本号。  
+选择后会自动写回 `VERSION`，并按新版本输出可执行文件到 `dist\Larj_v<版本号>.exe`（例如 `dist\Larj_v0.1.1.exe`）。
 
 **注意**：打包后的程序需要 `everything/` 目录中的文件才能使用搜索功能。
+
+### 应用内更新（GitHub Releases）
+
+在“设置 -> 通用设置”中点击 **检查并更新**，程序会：
+
+1. 从 GitHub Releases 检查最新版本；
+2. 下载更新包并执行 SHA256 校验；
+3. 启动独立 updater 进程，在主程序退出后替换文件并重启。
+
+本地数据采用**本地优先**策略，不会覆盖你的现有配置：
+
+- `config/settings.json`：保留本地值，仅补齐新增默认键；
+- `config/apps.json`：保留本地应用与使用数据；
+- `config/plugins/*.json`：保留本地插件配置，缺失键补默认值。
+
+如需发布可更新版本，建议在 Release 资产中提供：
+
+- 更新包（建议 `.zip`）；
+- 对应 `.sha256` 文件（或在 Release 说明中包含该包的 SHA256）。
 
 ## 使用方法
 

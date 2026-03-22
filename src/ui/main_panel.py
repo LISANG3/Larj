@@ -7,8 +7,14 @@ Contains search box, app grid, and search results
 
 import logging
 import os
+import sys
+import subprocess
+import uuid
+import json
 from pathlib import Path
+from collections import OrderedDict
 import psutil
+from datetime import datetime
 from PyQt5.QtWidgets import (
     QWidget, QApplication, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton,
     QScrollArea, QLabel, QGridLayout, QListWidget, QListWidgetItem,
@@ -20,6 +26,7 @@ from PyQt5.QtCore import Qt, pyqtSignal, QTimer, QMimeData, QPoint, QSize, QRect
 from PyQt5.QtGui import QIcon, QPixmap, QFont, QColor, QPalette, QLinearGradient, QBrush, QPainter, QPen, QDrag, QPainterPath, QRegion
 from pynput import mouse
 from src.core.hotkey_listener import detect_hotkey, DEFAULT_TRIGGER_KEY
+from src.core.update_service import UpdateService
 
 
 def _hicon_to_pixmap(hicon, size: int) -> QPixmap:
@@ -151,15 +158,32 @@ def extract_icon_from_file(file_path: str, size: int = 32) -> QIcon:
                             return QIcon(pixmap)
                     finally:
                         win32gui.DestroyIcon(hicon)
-        except ImportError:
-            pass
-        except Exception:
-            pass
+        except ImportError as exc:
+            logging.getLogger(__name__).debug(f"win32 icon backend unavailable: {exc}")
+        except Exception as exc:
+            logging.getLogger(__name__).warning(f"Failed to extract icon for {file_path}: {exc}")
     
     if os.path.isdir(file_path):
         return QIcon.fromTheme("folder", QIcon())
     
     return QIcon.fromTheme("application-x-executable", QIcon())
+
+
+_ICON_CACHE_MAX_SIZE = 512
+_icon_cache = OrderedDict()  # (path, size) -> QIcon
+
+
+def _get_cached_icon(file_path: str, size: int = 32) -> QIcon:
+    cache_key = (file_path, size)
+    if cache_key in _icon_cache:
+        _icon_cache.move_to_end(cache_key)
+        return _icon_cache[cache_key]
+
+    icon = extract_icon_from_file(file_path, size=size)
+    _icon_cache[cache_key] = icon
+    while len(_icon_cache) > _ICON_CACHE_MAX_SIZE:
+        _icon_cache.popitem(last=False)
+    return icon
 
 
 def _resolve_style_tokens(style: str, tokens: dict) -> str:
@@ -662,6 +686,8 @@ class MainPanel(QWidget):
         self._mouse_listener = None
         self._bg_pixmap_cache = None  # ((path, width, height), scaled_pixmap)
         self._accept_search_results = False
+        self._last_apps_signature = None
+        self.update_service = UpdateService(self.config_manager)
         
         self._setup_ui()
         self._connect_signals()
@@ -796,14 +822,9 @@ class MainPanel(QWidget):
             self.stacked_widget.setCurrentWidget(self.app_grid_widget)
             self.search_results.clear()
     
-    def _load_apps(self):
+    def _load_apps(self, force: bool = False):
         """Load applications and plugins into grid"""
         try:
-            for i in reversed(range(self.app_grid.count())):
-                item = self.app_grid.itemAt(i)
-                if item and item.widget():
-                    item.widget().setParent(None)
-            
             apps = self.application_manager.get_apps()
             
             all_items = list(apps)
@@ -816,6 +837,24 @@ class MainPanel(QWidget):
                         "type": "plugin",
                         "plugin_instance": plugin
                     })
+
+            signature = tuple(
+                (
+                    item.get("type", "app"),
+                    item.get("id"),
+                    item.get("name"),
+                    item.get("path"),
+                    item.get("plugin_instance")
+                )
+                for item in all_items
+            )
+            if not force and signature == self._last_apps_signature:
+                return
+
+            for i in reversed(range(self.app_grid.count())):
+                item = self.app_grid.itemAt(i)
+                if item and item.widget():
+                    item.widget().setParent(None)
             
             cols = 4
             # 设置列等宽拉伸，保证每个图标列宽一致
@@ -830,6 +869,7 @@ class MainPanel(QWidget):
                 else:
                     button = self._create_app_button(item)
                 self.app_grid.addWidget(button, row, col, Qt.AlignCenter)
+            self._last_apps_signature = signature
             
             self.logger.debug(f"Loaded {len(apps)} apps and {len(all_items) - len(apps)} plugins")
             
@@ -915,7 +955,7 @@ class MainPanel(QWidget):
         button.clicked.connect(lambda: self._on_app_clicked(app))
         
         # 提取图标并统一大小，确保所有图标尺寸一致
-        icon = extract_icon_from_file(app.get("path", ""), size=32)
+        icon = _get_cached_icon(app.get("path", ""), size=32)
         if not icon.isNull():
             button.setIcon(icon)
             # 统一图标显示大小为32x32像素
@@ -1035,7 +1075,7 @@ class MainPanel(QWidget):
                 updated_app["name"] = new_name
                 updated_app["args"] = new_args
                 self.application_manager.update_app(app.get("id"), updated_app)
-                self._load_apps()
+                self._load_apps(force=True)
 
     def _rename_app(self, app: dict):
         """Quickly rename an application icon"""
@@ -1046,7 +1086,7 @@ class MainPanel(QWidget):
             updated_app = app.copy()
             updated_app["name"] = new_name.strip()
             self.application_manager.update_app(app.get("id"), updated_app)
-            self._load_apps()
+            self._load_apps(force=True)
 
     def _delete_app(self, app: dict):
         """Delete application"""
@@ -1059,7 +1099,7 @@ class MainPanel(QWidget):
         
         if reply == QMessageBox.Yes:
             self.application_manager.remove_app(app.get("id"))
-            self._load_apps()
+            self._load_apps(force=True)
     
     def _move_app(self, app: dict, direction: int):
         """Move app up or down in the list"""
@@ -1081,7 +1121,7 @@ class MainPanel(QWidget):
         
         apps[current_index], apps[new_index] = apps[new_index], apps[current_index]
         self.config_manager.save_apps()
-        self._load_apps()
+        self._load_apps(force=True)
     
     def _on_app_clicked(self, app: dict):
         """Handle app button click"""
@@ -1109,7 +1149,7 @@ class MainPanel(QWidget):
                 if file_path:
                     app_name = Path(file_path).stem
                     self.application_manager.add_app(app_name, file_path)
-                    self._load_apps()
+                    self._load_apps(force=True)
                     self.logger.info(f"Added app: {app_name}")
                     
             elif action == add_folder_action:
@@ -1117,18 +1157,18 @@ class MainPanel(QWidget):
                 if folder_path:
                     folder_name = Path(folder_path).name
                     app_data = {
-                        "id": str(__import__('uuid').uuid4()),
+                        "id": str(uuid.uuid4()),
                         "name": folder_name,
                         "path": folder_path,
                         "icon_path": "",
                         "args": "",
                         "is_folder": True,
                         "usage_count": 0,
-                        "created_at": __import__('datetime').datetime.now().isoformat(),
+                        "created_at": datetime.now().isoformat(),
                         "last_used": None
                     }
                     self.config_manager.add_app(app_data)
-                    self._load_apps()
+                    self._load_apps(force=True)
                     self.logger.info(f"Added folder: {folder_name}")
                     
         except Exception as e:
@@ -1227,6 +1267,22 @@ class MainPanel(QWidget):
         lbl = QLabel("开机自启动")
         lbl.setMinimumWidth(120)
         form_layout.addRow(lbl, autostart_checkbox)
+
+        update_btn = QPushButton("检查并更新")
+        update_btn.setCursor(Qt.PointingHandCursor)
+        update_btn.setStyleSheet(ModernStyle.SAVE_BUTTON_STYLE)
+        update_btn.clicked.connect(self._check_and_update)
+        update_hint = QLabel("从 GitHub Releases 拉取更新（本地数据本地优先保留）")
+        update_hint.setStyleSheet("font-size: 12px; color: #64748b;")
+        update_box = QWidget()
+        update_layout = QVBoxLayout(update_box)
+        update_layout.setContentsMargins(0, 0, 0, 0)
+        update_layout.setSpacing(6)
+        update_layout.addWidget(update_btn)
+        update_layout.addWidget(update_hint)
+        lbl = QLabel("版本更新")
+        lbl.setMinimumWidth(120)
+        form_layout.addRow(lbl, update_box)
         
         general_layout.addWidget(form_widget)
         general_layout.addStretch()
@@ -1539,7 +1595,7 @@ class MainPanel(QWidget):
                         self.plugin_system.plugins[plugin_id].apply_settings(settings)
                 
                 # Reload app grid to reflect plugin enable/disable changes
-                self._load_apps()
+                self._load_apps(force=True)
         finally:
             self._settings_dialog = None
     
@@ -1602,7 +1658,7 @@ class MainPanel(QWidget):
         self._accept_search_results = False
         self.search_engine.cancel_search()
         self._apply_home_view_state()
-        self._load_apps()
+        self._load_apps(force=True)
         self.update()
         self.repaint()
 
@@ -1644,7 +1700,7 @@ class MainPanel(QWidget):
         super().showEvent(event)
         self._update_window_mask()
         self.ensure_fresh_show_state()
-        self._load_apps()
+        self._load_apps(force=True)
         QTimer.singleShot(0, self.ensure_fresh_show_state)
 
     def resizeEvent(self, event):
@@ -1817,3 +1873,200 @@ class MainPanel(QWidget):
             self.memory_label.setText(f"内存: {memory_mb:.1f} MB")
         except Exception:
             self.memory_label.setText(f"内存: {self.MEMORY_PLACEHOLDER}")
+
+    def _build_updater_script(self, app_dir: Path) -> Path:
+        script_path = app_dir / "updater.ps1"
+        script_content = r"""param(
+    [int]$MainPid,
+    [string]$AppDir,
+    [string]$Package,
+    [string]$TargetExe,
+    [string]$NewVersion,
+    [int]$WaitTimeout = 90
+)
+
+$ErrorActionPreference = "Stop"
+
+function Write-State {
+    param([string]$Status, [string]$ErrorMessage)
+    $stateFile = Join-Path $AppDir "config\update_state.json"
+    $stateDir = Split-Path $stateFile -Parent
+    if (!(Test-Path $stateDir)) {
+        New-Item -ItemType Directory -Path $stateDir -Force | Out-Null
+    }
+    $obj = @{
+        status = $Status
+        target_version = $NewVersion
+        package_path = $Package
+        updated_at = (Get-Date).ToString("o")
+        error = $ErrorMessage
+    }
+    ($obj | ConvertTo-Json -Compress) | Set-Content -LiteralPath $stateFile -Encoding UTF8
+}
+
+function Copy-Merge {
+    param([string]$Source, [string]$Destination, [string[]]$ExcludeNames)
+    if (!(Test-Path $Destination)) {
+        New-Item -ItemType Directory -Path $Destination -Force | Out-Null
+    }
+    Get-ChildItem -LiteralPath $Source -Force | ForEach-Object {
+        if ($ExcludeNames -contains $_.Name) {
+            return
+        }
+        $target = Join-Path $Destination $_.Name
+        if ($_.PSIsContainer) {
+            Copy-Item -LiteralPath $_.FullName -Destination $target -Recurse -Force
+        } else {
+            Copy-Item -LiteralPath $_.FullName -Destination $target -Force
+        }
+    }
+}
+
+$timestamp = Get-Date -Format "yyyyMMddHHmmss"
+$appPath = [System.IO.Path]::GetFullPath($AppDir)
+$packagePath = [System.IO.Path]::GetFullPath($Package)
+$packageName = [System.IO.Path]::GetFileName($packagePath)
+$parentPath = [System.IO.Path]::GetDirectoryName($appPath)
+$backupPath = Join-Path $parentPath ("Larj_backup_" + $NewVersion + "_" + $timestamp)
+$tempRoot = Join-Path $parentPath ("larj_update_apply_" + $timestamp)
+$extractRoot = Join-Path $tempRoot "extract"
+
+try {
+    Write-State -Status "installing" -ErrorMessage ""
+
+    $deadline = (Get-Date).AddSeconds($WaitTimeout)
+    while ($true) {
+        $proc = Get-Process -Id $MainPid -ErrorAction SilentlyContinue
+        if (-not $proc) { break }
+        if ((Get-Date) -gt $deadline) {
+            throw "Target process did not exit in timeout: $MainPid"
+        }
+        Start-Sleep -Milliseconds 500
+    }
+
+    if (Test-Path $tempRoot) {
+        Remove-Item -LiteralPath $tempRoot -Recurse -Force
+    }
+    New-Item -ItemType Directory -Path $extractRoot -Force | Out-Null
+    Expand-Archive -LiteralPath $packagePath -DestinationPath $extractRoot -Force
+
+    $entries = Get-ChildItem -LiteralPath $extractRoot -Force
+    if ($entries.Count -eq 1 -and $entries[0].PSIsContainer) {
+        $payloadRoot = $entries[0].FullName
+    } else {
+        $payloadRoot = $extractRoot
+    }
+
+    Copy-Item -LiteralPath $appPath -Destination $backupPath -Recurse -Force
+
+    $keepNames = @("config", "logs", "updater.ps1", $packageName)
+    Get-ChildItem -LiteralPath $appPath -Force | ForEach-Object {
+        if ($keepNames -contains $_.Name) {
+            return
+        }
+        Remove-Item -LiteralPath $_.FullName -Recurse -Force
+    }
+
+    Copy-Merge -Source $payloadRoot -Destination $appPath -ExcludeNames @("config")
+    Set-Content -LiteralPath (Join-Path $appPath "VERSION") -Value $NewVersion -Encoding UTF8
+
+    Write-State -Status "success" -ErrorMessage ""
+    $targetPath = Join-Path $appPath $TargetExe
+    if (Test-Path $targetPath) {
+        Start-Process -FilePath $targetPath -WorkingDirectory $appPath
+    }
+} catch {
+    $errorMessage = $_.Exception.Message
+    try {
+        if (Test-Path $backupPath) {
+            $keepNames = @("config", "logs", "updater.ps1", $packageName)
+            Get-ChildItem -LiteralPath $appPath -Force | ForEach-Object {
+                if ($keepNames -contains $_.Name) { return }
+                Remove-Item -LiteralPath $_.FullName -Recurse -Force
+            }
+            Copy-Merge -Source $backupPath -Destination $appPath -ExcludeNames @("config")
+        }
+    } catch {
+    }
+    Write-State -Status "failed" -ErrorMessage $errorMessage
+} finally {
+    if (Test-Path $tempRoot) {
+        Remove-Item -LiteralPath $tempRoot -Recurse -Force
+    }
+}
+"""
+        script_path.write_text(script_content, encoding="utf-8")
+        return script_path
+
+    def _launch_updater(self, package_path: Path, target_version: str):
+        app_dir = Path(os.getcwd()).resolve()
+        exe_name = Path(sys.executable).name
+        target_exe = "Larj.exe" if exe_name.lower() in ("python.exe", "pythonw.exe") else exe_name
+
+        update_state_file = app_dir / "config" / "update_state.json"
+        update_state_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(update_state_file, "w", encoding="utf-8") as fp:
+            json.dump(
+                {
+                    "status": "pending",
+                    "target_version": target_version,
+                    "package_path": str(package_path),
+                    "started_at": datetime.now().isoformat(),
+                    "error": "",
+                },
+                fp,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+
+        script_path = self._build_updater_script(app_dir)
+        cmd = [
+            "powershell",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(script_path),
+            "-MainPid",
+            str(os.getpid()),
+            "-AppDir",
+            str(app_dir),
+            "-Package",
+            str(package_path),
+            "-TargetExe",
+            target_exe,
+            "-NewVersion",
+            target_version,
+            "-WaitTimeout",
+            "90",
+        ]
+        subprocess.Popen(cmd, cwd=str(app_dir))
+
+    def _check_and_update(self):
+        """Check updates from GitHub Releases and trigger updater process."""
+        try:
+            if not self.config_manager.get("update.enabled", True):
+                QMessageBox.information(self, "更新", "更新功能已禁用")
+                return
+
+            info = self.update_service.check_for_update()
+            if info is None:
+                QMessageBox.information(self, "更新", "当前已是最新版本")
+                return
+
+            detail = f"发现新版本: v{info.version}\n资源包: {info.asset_name}\n\n是否下载并安装？"
+            reply = QMessageBox.question(self, "发现更新", detail, QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
+            if reply != QMessageBox.Yes:
+                return
+
+            package_path = self.update_service.download_update(info)
+            self._launch_updater(package_path, info.version)
+            QMessageBox.information(
+                self,
+                "开始更新",
+                "更新程序已启动。\n主程序即将退出并安装新版本，安装完成后会自动重启。",
+            )
+            QApplication.instance().quit()
+        except Exception as e:
+            self.logger.error(f"Failed to update app: {e}", exc_info=True)
+            QMessageBox.warning(self, "更新失败", str(e))

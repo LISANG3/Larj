@@ -30,6 +30,7 @@ class ApplicationManager(QObject):
         super().__init__()
         self.logger = logging.getLogger(__name__)
         self.config_manager = config_manager
+        self._apps_cache = None
         
         # Load configuration
         self.reload_config()
@@ -50,6 +51,7 @@ class ApplicationManager(QObject):
     def get_apps(self) -> List[Dict]:
         """Get all applications"""
         apps = self.config_manager.get_apps()
+        self._apps_cache = apps
         
         # Sort if enabled
         if self.auto_sort:
@@ -97,6 +99,7 @@ class ApplicationManager(QObject):
             
             # Add to config
             self.config_manager.add_app(app_data)
+            self._apps_cache = None
             
             # Emit signal
             self.app_added.emit(app_data)
@@ -112,6 +115,7 @@ class ApplicationManager(QObject):
         """Remove application"""
         try:
             self.config_manager.remove_app(app_id)
+            self._apps_cache = None
             self.app_removed.emit(app_id)
             self.logger.info(f"Removed app: {app_id}")
             
@@ -122,6 +126,7 @@ class ApplicationManager(QObject):
         """Update application data"""
         try:
             self.config_manager.update_app(app_id, app_data)
+            self._apps_cache = None
             self.app_updated.emit(app_id, app_data)
             self.logger.info(f"Updated app: {app_id}")
             
@@ -164,16 +169,21 @@ class ApplicationManager(QObject):
     def _update_usage_stats(self, app_id: str):
         """Update application usage statistics"""
         try:
-            apps = self.config_manager.get_apps()
+            if self._apps_cache is None:
+                self._apps_cache = self.config_manager.get_apps()
+            apps = self._apps_cache
+            app_updated = False
             
             for app in apps:
                 if app.get("id") == app_id:
                     app["usage_count"] = app.get("usage_count", 0) + 1
                     app["last_used"] = datetime.now().isoformat()
+                    app_updated = True
                     break
             
-            self.config_manager.save_apps()
-            self.logger.debug(f"Updated usage stats for app: {app_id}")
+            if app_updated:
+                self.config_manager.save_apps()
+                self.logger.debug(f"Updated usage stats for app: {app_id}")
             
         except Exception as e:
             self.logger.error(f"Failed to update usage stats: {e}")

@@ -102,3 +102,20 @@ class TestSearchCache:
 
     def test_cache_check_missing(self, search_engine):
         assert search_engine._check_cache("nonexistent") is False
+
+    def test_cache_hit_refreshes_recency_for_lru_behavior(self, search_engine):
+        search_engine.cache_max_size = 2
+        search_engine._on_search_completed("first", [{"name": "a"}])
+        search_engine._on_search_completed("second", [{"name": "b"}])
+
+        assert search_engine._check_cache("first") is True
+        search_engine._on_search_completed("third", [{"name": "c"}])
+
+        assert "first" in search_engine.search_cache
+        assert "third" in search_engine.search_cache
+        assert "second" not in search_engine.search_cache
+
+    def test_on_search_completed_ignores_stale_token(self, search_engine):
+        search_engine._active_search_token = 2
+        search_engine._on_search_completed("stale", [{"name": "x"}], token=1)
+        assert "stale" not in search_engine.search_cache

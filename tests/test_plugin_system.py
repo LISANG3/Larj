@@ -181,6 +181,38 @@ class TestFilePlugin(PluginBase):
         metadata = plugin_system.discovered_plugins["test_file"]["metadata"]
         assert metadata["name"] == "Test File Plugin"
 
+    def test_discovery_prefers_classmethod_metadata_without_instantiation(self, setup_test_env):
+        plugin_code = '''
+from src.core.plugin_system import PluginBase
+
+class ClassMetadataPlugin(PluginBase):
+    init_count = 0
+    @classmethod
+    def get_metadata(cls):
+        return {
+            "plugin_id": "class_meta",
+            "name": "Class Meta Plugin",
+            "icon": "",
+            "version": "1.0.0",
+            "author": "",
+            "description": "",
+            "config_schema": {}
+        }
+    def __init__(self):
+        ClassMetadataPlugin.init_count += 1
+    def handle_click(self):
+        pass
+'''
+        plugin_path = Path(setup_test_env) / "plugins" / "class_meta.py"
+        plugin_path.write_text(plugin_code, encoding="utf-8")
+
+        config_manager = ConfigManager()
+        plugin_system = PluginSystem(config_manager)
+
+        assert "class_meta" in plugin_system.discovered_plugins
+        plugin_class = plugin_system.discovered_plugins["class_meta"]["class"]
+        assert plugin_class.init_count == 0
+
     def test_discover_directory_plugin(self, setup_test_env):
         # Write a test plugin package
         plugin_dir = Path(setup_test_env) / "plugins" / "test_pkg"

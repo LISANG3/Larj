@@ -180,6 +180,7 @@ class SearchEngine(QObject):
         
         # Search state
         self.current_worker = None
+        self._active_search_token = 0
         self.search_cache = OrderedDict()  # keyword -> (timestamp, results)
         self.cache_max_size = 100  # maximum number of cached searches
         self.cache_timeout = 60  # seconds
@@ -239,6 +240,7 @@ class SearchEngine(QObject):
         if keyword in self.search_cache:
             timestamp, results = self.search_cache[keyword]
             if time.time() - timestamp < self.cache_timeout:
+                self.search_cache.move_to_end(keyword)
                 self.logger.debug(f"Using cached results for: {keyword}")
                 self.search_completed.emit(results)
                 return True
@@ -257,8 +259,9 @@ class SearchEngine(QObject):
         
         # Cancel previous search if running
         if self.current_worker and self.current_worker.isRunning():
-            self.current_worker.terminate()
-            self.current_worker.wait()
+            self.current_worker.requestInterruption()
+        self._active_search_token += 1
+        active_token = self._active_search_token
         
         # Check if es.exe exists
         if not self.es_path.exists():
@@ -267,14 +270,20 @@ class SearchEngine(QObject):
         
         # Start new search in worker thread
         self.current_worker = SearchWorker(str(self.es_path), keyword, self.max_results)
-        self.current_worker.search_completed.connect(lambda results: self._on_search_completed(keyword, results))
+        self.current_worker.search_completed.connect(
+            lambda results, kw=keyword, token=active_token: self._on_search_completed(kw, results, token=token)
+        )
         self.current_worker.search_failed.connect(self.search_failed.emit)
         self.current_worker.start()
         
         self.logger.debug(f"Executing search: {keyword}")
     
-    def _on_search_completed(self, keyword: str, results: List[Dict]):
+    def _on_search_completed(self, keyword: str, results: List[Dict], token: int = None):
         """Handle search completion"""
+        if token is not None and token != self._active_search_token:
+            self.logger.debug(f"Ignored stale search result for: {keyword}")
+            return
+
         # Update cache with bounded size
         self.search_cache[keyword] = (time.time(), results)
         while len(self.search_cache) > self.cache_max_size:
@@ -289,9 +298,9 @@ class SearchEngine(QObject):
         """Cancel current search"""
         self.debounce_timer.stop()
         self.pending_keyword = ""
+        self._active_search_token += 1
         if self.current_worker and self.current_worker.isRunning():
-            self.current_worker.terminate()
-            self.current_worker.wait()
+            self.current_worker.requestInterruption()
             self.logger.debug("Search cancelled")
 
     def clear_cache(self):

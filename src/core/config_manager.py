@@ -59,6 +59,12 @@ class ConfigManager(QObject):
             "background_color": "#f8fafc",
             "background_image": "",
             "accent_color": "#3b82f6"
+        },
+        "update": {
+            "github_owner": "LISANG3",
+            "github_repo": "Larj",
+            "request_timeout_sec": 20,
+            "enabled": True
         }
     }
     
@@ -90,6 +96,12 @@ class ConfigManager(QObject):
             if file_path.exists():
                 with open(file_path, 'r', encoding='utf-8') as f:
                     data = json.load(f)
+                    if isinstance(data, dict) and isinstance(default_data, dict):
+                        merged = self._deep_fill_defaults(data, default_data)
+                        if merged != data:
+                            with open(file_path, 'w', encoding='utf-8') as wf:
+                                json.dump(merged, wf, ensure_ascii=False, separators=(',', ':'))
+                            data = merged
                     self.logger.info(f"Loaded config from {file_path}")
                     return data
             else:
@@ -102,6 +114,17 @@ class ConfigManager(QObject):
         except Exception as e:
             self.logger.error(f"Failed to load config from {file_path}: {e}")
             return default_data
+
+    def _deep_fill_defaults(self, local_data: Dict, default_data: Dict) -> Dict:
+        """Fill missing keys from defaults without overwriting existing user values."""
+        result = dict(local_data)
+        for key, default_value in default_data.items():
+            if key not in result:
+                result[key] = default_value
+                continue
+            if isinstance(result[key], dict) and isinstance(default_value, dict):
+                result[key] = self._deep_fill_defaults(result[key], default_value)
+        return result
     
     def get(self, key_path: str, default: Any = None) -> Any:
         """
@@ -138,6 +161,9 @@ class ConfigManager(QObject):
                 config = config[key]
             
             # Set the value
+            if config.get(keys[-1]) == value:
+                self.logger.debug(f"Config unchanged, skip save: {key_path}")
+                return
             config[keys[-1]] = value
             
             # Save to file
@@ -153,7 +179,7 @@ class ConfigManager(QObject):
         """Save settings to file"""
         try:
             with open(self.settings_file, 'w', encoding='utf-8') as f:
-                json.dump(self.settings, f, indent=2, ensure_ascii=False)
+                json.dump(self.settings, f, ensure_ascii=False, separators=(',', ':'))
             self.logger.debug("Settings saved")
         except Exception as e:
             self.logger.error(f"Failed to save settings: {e}")
@@ -162,7 +188,7 @@ class ConfigManager(QObject):
         """Save application data to file"""
         try:
             with open(self.apps_file, 'w', encoding='utf-8') as f:
-                json.dump(self.apps, f, indent=2, ensure_ascii=False)
+                json.dump(self.apps, f, ensure_ascii=False, separators=(',', ':'))
             self.logger.debug("Apps data saved")
         except Exception as e:
             self.logger.error(f"Failed to save apps data: {e}")

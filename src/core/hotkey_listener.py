@@ -100,6 +100,8 @@ class HotkeyListener(QObject):
         self.last_trigger_time = 0
         self.debounce_ms = 200  # Prevent double-triggers
         self.pressed_keys = set()
+        self._normalized_fallback_set = set()
+        self._trigger_requires_modifiers = False
         
         # Load configuration
         self.reload_config()
@@ -115,6 +117,8 @@ class HotkeyListener(QObject):
                 (self._normalize_hotkey(k) for k in self.config_manager.get("hotkey.fallback_keys", ["Ctrl+Space"]))
                 if normalized != self.trigger_key
             ]
+            self._normalized_fallback_set = set(self.fallback_keys)
+            self._trigger_requires_modifiers = "+" in self.trigger_key
             self.enabled = self.config_manager.get("hotkey.enabled", True)
             
             self.logger.info(f"Hotkey config reloaded: {self.trigger_key}, fallback: {self.fallback_keys}")
@@ -188,18 +192,31 @@ class HotkeyListener(QObject):
                 return
 
             self.pressed_keys.add(key_name)
+
+            # Fast path: most non-modifier keys can skip subset checks
+            # when trigger/fallback are combination shortcuts.
+            if (
+                not self._trigger_requires_modifiers
+                and self.trigger_key == key_name
+                and self._check_debounce()
+            ):
+                self.logger.debug(f"Keyboard trigger {self.trigger_key} triggered")
+                self.hotkey_triggered.emit()
+                return
+
             if self._is_shortcut_triggered(self.trigger_key):
                 if self._check_debounce():
                     self.logger.debug(f"Keyboard trigger {self.trigger_key} triggered")
                     self.hotkey_triggered.emit()
                 return
 
-            for shortcut in self.fallback_keys:
-                if self._is_shortcut_triggered(shortcut):
-                    if self._check_debounce():
-                        self.logger.debug(f"Keyboard shortcut {shortcut} triggered")
-                        self.hotkey_triggered.emit()
-                    break
+            for shortcut in self._normalized_fallback_set:
+                if not self._is_shortcut_triggered(shortcut):
+                    continue
+                if self._check_debounce():
+                    self.logger.debug(f"Keyboard shortcut {shortcut} triggered")
+                    self.hotkey_triggered.emit()
+                break
             
         except Exception as e:
             self.logger.error(f"Error handling key press: {e}")

@@ -8,7 +8,6 @@ Plugins are auto-discovered from the plugins/ directory and expose metadata via 
 
 import json
 import logging
-import importlib
 import importlib.util
 import os
 import tempfile
@@ -193,13 +192,28 @@ class PluginSystem(QObject):
             self.logger.warning(f"Plugin '{plugin_name}' does not implement get_metadata, skipping")
             return
 
-        # Temporarily instantiate to get metadata
-        try:
-            temp_instance = plugin_class()
-        except Exception as e:
-            self.logger.error(f"Failed to instantiate plugin class in '{plugin_name}': {e}", exc_info=True)
-            return
-        metadata = temp_instance.get_metadata()
+        # Prefer class-level metadata call to avoid discovery-time instantiation cost.
+        metadata = None
+        class_get_metadata = getattr(plugin_class, "get_metadata", None)
+        if callable(class_get_metadata):
+            try:
+                metadata = class_get_metadata()
+            except TypeError:
+                metadata = None
+            except Exception as e:
+                self.logger.error(
+                    f"Failed to read class metadata for plugin '{plugin_name}': {e}",
+                    exc_info=True
+                )
+                return
+
+        if metadata is None:
+            try:
+                temp_instance = plugin_class()
+                metadata = temp_instance.get_metadata()
+            except Exception as e:
+                self.logger.error(f"Failed to instantiate plugin class in '{plugin_name}': {e}", exc_info=True)
+                return
 
         if not isinstance(metadata, dict) or "plugin_id" not in metadata:
             self.logger.warning(f"Plugin '{plugin_name}' returned invalid metadata, skipping")
