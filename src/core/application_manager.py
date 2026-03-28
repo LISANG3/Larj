@@ -7,6 +7,7 @@ Handles app CRUD operations, launching, and usage tracking
 
 import os
 import logging
+import shlex
 import subprocess
 import uuid
 from pathlib import Path
@@ -140,22 +141,30 @@ class ApplicationManager(QObject):
             path = app_info.get("path")
             args = app_info.get("args", "")
             is_folder = app_info.get("is_folder", False)
-            
-            if not Path(path).exists():
+
+            if not path:
+                raise ValueError("Path is empty")
+
+            path_obj = Path(path)
+            if not path_obj.exists():
                 raise FileNotFoundError(f"Path not found: {path}")
-            
-            if is_folder or Path(path).is_dir():
+
+            if is_folder or path_obj.is_dir():
                 if os.name == 'nt':
-                    os.startfile(path)
+                    os.startfile(str(path_obj))
                 else:
-                    subprocess.Popen(['xdg-open', path])
+                    subprocess.Popen(['xdg-open', str(path_obj)])
             else:
-                if args:
-                    cmd = f'"{path}" {args}'
+                if os.name == 'nt':
+                    launch_args = args.strip() if isinstance(args, str) and args.strip() else None
+                    try:
+                        os.startfile(str(path_obj), arguments=launch_args)
+                    except TypeError:
+                        cmd = [str(path_obj)] + self._split_launch_args(args)
+                        subprocess.Popen(cmd, shell=False)
                 else:
-                    cmd = f'"{path}"'
-                
-                subprocess.Popen(cmd, shell=True)
+                    cmd = [str(path_obj)] + self._split_launch_args(args)
+                    subprocess.Popen(cmd, shell=False)
             
             self._update_usage_stats(app_id)
             self.app_launched.emit(app_id)
@@ -165,6 +174,15 @@ class ApplicationManager(QObject):
         except Exception as e:
             self.logger.error(f"Failed to launch: {e}", exc_info=True)
             raise
+
+    @staticmethod
+    def _split_launch_args(args: str) -> List[str]:
+        if not args or not isinstance(args, str) or not args.strip():
+            return []
+        try:
+            return shlex.split(args, posix=True)
+        except ValueError as e:
+            raise ValueError(f"Invalid launch arguments: {args}") from e
     
     def _update_usage_stats(self, app_id: str):
         """Update application usage statistics"""

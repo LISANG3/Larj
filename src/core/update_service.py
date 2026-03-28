@@ -10,6 +10,7 @@ import hashlib
 import json
 import logging
 import re
+import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -63,13 +64,31 @@ class UpdateService:
             raise ValueError(f"Invalid version format: {raw}")
         return int(chunks[0]), int(chunks[1]), int(chunks[2])
 
+    @staticmethod
+    def _resolve_app_dir() -> Path:
+        if getattr(sys, "frozen", False):
+            return Path(sys.executable).resolve().parent
+        return Path.cwd()
+
+    @classmethod
+    def _version_from_executable_name(cls) -> str:
+        exe_name = Path(sys.executable).name
+        match = re.search(r"Larj_v(\d+\.\d+\.\d+)\.exe$", exe_name, flags=re.IGNORECASE)
+        if not match:
+            return ""
+        return cls.normalize_version(match.group(1))
+
     def get_current_version(self) -> str:
         """Read current app version from VERSION file."""
-        version_file = Path("VERSION")
+        version_file = self._resolve_app_dir() / "VERSION"
         if version_file.exists():
             version = version_file.read_text(encoding="utf-8").strip()
             if version:
                 return self.normalize_version(version)
+
+        exe_version = self._version_from_executable_name()
+        if exe_version:
+            return exe_version
         from src import __version__
 
         return self.normalize_version(__version__)

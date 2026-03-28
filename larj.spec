@@ -13,6 +13,7 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[
+        ('VERSION', '.'),
         ('config', 'config'),
         ('plugins', 'plugins'),
         ('everything', 'everything'),

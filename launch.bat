@@ -35,12 +35,13 @@ if %errorlevel% neq 0 (
 echo [OK] Dependencies installed
 echo.
 
-REM Check for Everything es.exe
-if not exist "everything\es.exe" (
-    echo [WARN] Everything es.exe not found in everything\ directory
-    echo File search will not be available until you install it.
-    echo Download from: https://www.voidtools.com/downloads/
-    echo.
+if not exist "everything\Everything64.dll" (
+    if not exist "everything\Everything32.dll" (
+        echo [WARN] Everything SDK DLL not found in everything\ directory
+        echo Search may not work until you place Everything64.dll or Everything32.dll.
+        echo Download SDK: https://www.voidtools.com/Everything-SDK.zip
+        echo.
+    )
 )
 
 REM Launch Larj

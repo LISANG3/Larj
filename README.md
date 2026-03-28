@@ -43,10 +43,12 @@ cd Larj
 pip install -r requirements.txt
 ```
 
-3. **下载 Everything**
+3. **下载 Everything（SDK 模式）**
    - 访问 https://www.voidtools.com/downloads/
-   - 下载 Command-line Interface (es.exe)
-   - 将 `es.exe` 和 `Everything.exe` 放入 `everything/` 目录
+   - 下载 Everything，并确保系统中可运行
+   - 下载 SDK（https://www.voidtools.com/Everything-SDK.zip）
+   - 将 `Everything64.dll`（或 x86 下 `Everything32.dll`）放入 `everything/` 目录
+   - 建议同时放入 `Everything.exe`，用于自动 `-start-service`
 
 4. **运行程序**
 ```bash
@@ -72,7 +74,7 @@ pyinstaller larj.spec --clean
 运行 `build.bat` 时会先读取根目录 `VERSION`，并让你选择版本更新方式：`patch`（默认）、`minor`、`major`、`keep` 或手动输入完整版本号。  
 选择后会自动写回 `VERSION`，并按新版本输出可执行文件到 `dist\Larj_v<版本号>.exe`（例如 `dist\Larj_v0.1.1.exe`）。
 
-**注意**：打包后的程序需要 `everything/` 目录中的文件才能使用搜索功能。
+**注意**：打包后的程序需要 `everything/Everything64.dll`（或 `Everything32.dll`）才能使用 SDK 搜索。
 
 ### 应用内更新（GitHub Releases）
 
@@ -104,7 +106,7 @@ pyinstaller larj.spec --clean
 
 1. 触发面板后，在搜索框输入关键词
 2. 搜索结果即时显示
-3. 双击结果打开文件
+3. 单击结果打开文件（也支持双击/回车）
 
 ### 管理应用
 
@@ -123,9 +125,10 @@ Larj/
 │       ├── mtran_server.json
 │       └── ocr.json
 │
-├── everything/            # Everything 搜索引擎
-│   ├── es.exe            # 命令行工具 (需下载)
-│   └── Everything.exe    # 主程序 (需下载)
+├── everything/            # Everything SDK 运行目录
+│   ├── Everything64.dll   # x64 SDK (需下载)
+│   ├── Everything32.dll   # x86 SDK (按需)
+│   └── Everything.exe     # 可选：用于自动启动服务
 │
 ├── plugins/              # 插件目录
 │   ├── mtran_server/     # 腾讯翻译插件
@@ -183,7 +186,7 @@ Larj/
 | ConfigManager | 配置读写、验证、热重载 |
 | HotkeyListener | 全局热键监听、防抖处理 |
 | WindowManager | 窗口显示/隐藏、位置计算、动画 |
-| SearchEngine | Everything 集成、异步搜索、结果缓存 |
+| SearchEngine | Everything SDK 集成、异步搜索、结果缓存 |
 | ApplicationManager | 应用管理、启动、使用统计 |
 | PluginSystem | 插件发现、加载、生命周期管理 |
 
@@ -198,7 +201,7 @@ Larj/
 **搜索流程:**
 ```
 用户输入 → 防抖(300ms) → SearchEngine 异步搜索 
-→ 调用 es.exe → 解析 CSV 结果 → 更新界面
+→ 异步扫描文件系统（可配搜索范围）→ 更新界面
 ```
 
 ## 插件系统
@@ -321,8 +324,8 @@ def create_plugin():
 - 更改热键配置
 
 ### 搜索不工作
-- 确保 `everything/es.exe` 存在
-- 确保 Everything 正在运行
+- 确保 `everything/Everything64.dll`（或 `Everything32.dll`）存在
+- 若启用自动拉起，确保 `everything/Everything.exe` 存在
 - 检查日志文件 `logs/larj.log`
 
 ### 窗口不显示

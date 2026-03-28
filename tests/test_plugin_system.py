@@ -135,6 +135,12 @@ class TestPluginBase:
 class TestPluginSystem:
     """Tests for PluginSystem class"""
 
+    @staticmethod
+    def _write_dir_plugin(setup_test_env, plugin_name: str, plugin_code: str):
+        plugin_dir = Path(setup_test_env) / "plugins" / plugin_name
+        plugin_dir.mkdir(parents=True, exist_ok=True)
+        (plugin_dir / "__init__.py").write_text(plugin_code, encoding="utf-8")
+
     def test_initialization(self, setup_test_env):
         config_manager = ConfigManager()
         plugin_system = PluginSystem(config_manager)
@@ -177,9 +183,7 @@ class TestFilePlugin(PluginBase):
         config_manager = ConfigManager()
         plugin_system = PluginSystem(config_manager)
 
-        assert "test_file" in plugin_system.discovered_plugins
-        metadata = plugin_system.discovered_plugins["test_file"]["metadata"]
-        assert metadata["name"] == "Test File Plugin"
+        assert "test_file" not in plugin_system.discovered_plugins
 
     def test_discovery_prefers_classmethod_metadata_without_instantiation(self, setup_test_env):
         plugin_code = '''
@@ -203,8 +207,7 @@ class ClassMetadataPlugin(PluginBase):
     def handle_click(self):
         pass
 '''
-        plugin_path = Path(setup_test_env) / "plugins" / "class_meta.py"
-        plugin_path.write_text(plugin_code, encoding="utf-8")
+        self._write_dir_plugin(setup_test_env, "class_meta", plugin_code)
 
         config_manager = ConfigManager()
         plugin_system = PluginSystem(config_manager)
@@ -214,10 +217,6 @@ class ClassMetadataPlugin(PluginBase):
         assert plugin_class.init_count == 0
 
     def test_discover_directory_plugin(self, setup_test_env):
-        # Write a test plugin package
-        plugin_dir = Path(setup_test_env) / "plugins" / "test_pkg"
-        plugin_dir.mkdir()
-
         plugin_code = '''
 from src.core.plugin_system import PluginBase
 
@@ -239,7 +238,7 @@ class TestPkgPlugin(PluginBase):
     def apply_settings(self, settings):
         self._settings = settings
 '''
-        (plugin_dir / "__init__.py").write_text(plugin_code)
+        self._write_dir_plugin(setup_test_env, "test_pkg", plugin_code)
 
         config_manager = ConfigManager()
         plugin_system = PluginSystem(config_manager)
@@ -270,8 +269,7 @@ class ConfigPlugin(PluginBase):
     def handle_click(self):
         pass
 '''
-        plugin_path = Path(setup_test_env) / "plugins" / "config_test.py"
-        plugin_path.write_text(plugin_code)
+        self._write_dir_plugin(setup_test_env, "config_test", plugin_code)
 
         config_manager = ConfigManager()
         plugin_system = PluginSystem(config_manager)
@@ -303,8 +301,7 @@ class LoadTestPlugin(PluginBase):
     def handle_click(self):
         pass
 '''
-        plugin_path = Path(setup_test_env) / "plugins" / "load_test.py"
-        plugin_path.write_text(plugin_code)
+        self._write_dir_plugin(setup_test_env, "load_test", plugin_code)
 
         # Set enabled_plugins in settings
         settings_file = Path(setup_test_env) / "config" / "settings.json"
@@ -336,8 +333,7 @@ class TogglePlugin(PluginBase):
     def handle_click(self):
         pass
 '''
-        plugin_path = Path(setup_test_env) / "plugins" / "toggle_test.py"
-        plugin_path.write_text(plugin_code)
+        self._write_dir_plugin(setup_test_env, "toggle_test", plugin_code)
 
         config_manager = ConfigManager()
         plugin_system = PluginSystem(config_manager)
@@ -392,8 +388,7 @@ class ErrorPlugin(PluginBase):
     def on_load(self):
         raise RuntimeError("Load error!")
 '''
-        plugin_path = Path(setup_test_env) / "plugins" / "error_test.py"
-        plugin_path.write_text(plugin_code)
+        self._write_dir_plugin(setup_test_env, "error_test", plugin_code)
 
         settings_file = Path(setup_test_env) / "config" / "settings.json"
         settings_file.parent.mkdir(exist_ok=True)
@@ -410,7 +405,7 @@ class ErrorPlugin(PluginBase):
         plugin_system.handle_plugin_click(plugin)
 
     def test_duplicate_plugin_id_skipped(self, setup_test_env):
-        """Duplicate plugin_id from different files should be skipped"""
+        """Directories with mismatched plugin_id should be skipped"""
         plugin_code1 = '''
 from src.core.plugin_system import PluginBase
 
@@ -445,17 +440,15 @@ class DupPlugin2(PluginBase):
     def handle_click(self):
         pass
 '''
-        (Path(setup_test_env) / "plugins" / "dup_a.py").write_text(plugin_code1)
-        (Path(setup_test_env) / "plugins" / "dup_b.py").write_text(plugin_code2)
+        self._write_dir_plugin(setup_test_env, "dup_a", plugin_code1)
+        self._write_dir_plugin(setup_test_env, "dup_b", plugin_code2)
 
         config_manager = ConfigManager()
         plugin_system = PluginSystem(config_manager)
 
-        # Only first one should be discovered
-        assert "dup_id" in plugin_system.discovered_plugins
-        # Only one should exist
-        count = sum(1 for pid in plugin_system.discovered_plugins if pid == "dup_id")
-        assert count == 1
+        assert "dup_id" not in plugin_system.discovered_plugins
+        assert "dup_a" not in plugin_system.discovered_plugins
+        assert "dup_b" not in plugin_system.discovered_plugins
 
     def test_get_discovered_plugins(self, setup_test_env):
         plugin_code = '''
@@ -475,8 +468,7 @@ class DiscoverTestPlugin(PluginBase):
     def handle_click(self):
         pass
 '''
-        plugin_path = Path(setup_test_env) / "plugins" / "discover_test.py"
-        plugin_path.write_text(plugin_code)
+        self._write_dir_plugin(setup_test_env, "discover_test", plugin_code)
 
         config_manager = ConfigManager()
         plugin_system = PluginSystem(config_manager)
@@ -534,8 +526,7 @@ class ShutdownPlugin(PluginBase):
     def handle_click(self):
         pass
 '''
-        plugin_path = Path(setup_test_env) / "plugins" / "shutdown_test.py"
-        plugin_path.write_text(plugin_code)
+        self._write_dir_plugin(setup_test_env, "shutdown_test", plugin_code)
 
         settings_file = Path(setup_test_env) / "config" / "settings.json"
         settings_file.parent.mkdir(exist_ok=True)
@@ -548,6 +539,29 @@ class ShutdownPlugin(PluginBase):
         assert "shutdown_test" in plugin_system.plugins
         plugin_system.shutdown()
         assert len(plugin_system.plugins) == 0
+
+    def test_plugin_id_must_match_directory_name(self, setup_test_env):
+        plugin_code = '''
+from src.core.plugin_system import PluginBase
+
+class WrongIdPlugin(PluginBase):
+    def get_metadata(self):
+        return {
+            "plugin_id": "other_id",
+            "name": "Wrong Id",
+            "icon": "",
+            "version": "1.0.0",
+            "author": "",
+            "description": "",
+            "config_schema": {}
+        }
+    def handle_click(self):
+        pass
+'''
+        self._write_dir_plugin(setup_test_env, "folder_name", plugin_code)
+        config_manager = ConfigManager()
+        plugin_system = PluginSystem(config_manager)
+        assert "other_id" not in plugin_system.discovered_plugins
 
 
 class TestExistingPlugins:
