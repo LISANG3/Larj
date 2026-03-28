@@ -38,10 +38,13 @@ class ConfigManager(QObject):
         "search": {
             "max_results": 50,
             "debounce_ms": 300,
-            "es_path": "everything/es.exe",
             "search_paths": [],
             "exclude_paths": [],
-            "cache_timeout": 60
+            "cache_timeout": 60,
+            "cache_max_size": 40,
+            "sdk_dll_path": "",
+            "everything_exe_path": "everything/Everything.exe",
+            "auto_start_everything": True
         },
         "application": {
             "auto_sort": True,

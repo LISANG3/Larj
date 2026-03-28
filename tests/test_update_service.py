@@ -9,7 +9,7 @@ import os
 import sys
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -122,3 +122,25 @@ def test_get_current_version_reads_version_file(mock_config_manager):
             assert service.get_current_version() == "1.2.3"
         finally:
             os.chdir(old)
+
+
+def test_get_current_version_from_executable_name_when_version_missing(mock_config_manager):
+    with tempfile.TemporaryDirectory() as td:
+        service = UpdateService(mock_config_manager)
+        with patch.object(UpdateService, "_resolve_app_dir", return_value=Path(td)), \
+                patch.object(sys, "executable", str(Path(td) / "Larj_v1.4.5.exe")):
+            assert service.get_current_version() == "1.4.5"
+
+
+def test_check_for_update_returns_none_when_versions_equal(mock_config_manager):
+    service = UpdateService(mock_config_manager)
+    service.get_current_version = MagicMock(return_value="1.2.3")
+    service._request_json = MagicMock(
+        return_value={
+            "tag_name": "v1.2.3",
+            "name": "v1.2.3",
+            "body": "notes",
+            "assets": [],
+        }
+    )
+    assert service.check_for_update() is None

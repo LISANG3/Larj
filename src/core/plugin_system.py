@@ -126,29 +126,35 @@ class PluginSystem(QObject):
             self.logger.error(f"Failed to migrate old plugin config: {e}", exc_info=True)
 
     def _discover_plugins(self):
-        """Discover all available plugins in plugin directory and extract metadata"""
+        """Discover directory-based plugins and extract metadata."""
         try:
             if not self.plugin_dir.exists():
                 self.logger.warning(f"Plugin directory not found: {self.plugin_dir}")
                 return
 
-            # Collect plugin candidates
             plugin_candidates = []
 
-            # Single-file plugins: plugins/xxx.py (skip __init__.py and private files)
+            # Directory plugins only: plugins/<plugin_name>/__init__.py
+            legacy_single_files = []
             for py_file in self.plugin_dir.glob("*.py"):
                 if py_file.name.startswith("_"):
                     continue
-                plugin_name = py_file.stem
-                plugin_candidates.append((plugin_name, py_file))
+                legacy_single_files.append(py_file.name)
 
-            # Directory plugins: plugins/xxx/__init__.py
             for subdir in self.plugin_dir.iterdir():
                 if not subdir.is_dir() or subdir.name.startswith("_"):
                     continue
                 init_file = subdir / "__init__.py"
                 if init_file.exists():
                     plugin_candidates.append((subdir.name, init_file))
+                else:
+                    self.logger.warning("Plugin directory missing __init__.py, skipped: %s", subdir.name)
+
+            if legacy_single_files:
+                self.logger.warning(
+                    "Legacy single-file plugins are no longer discovered; migrate to folders: %s",
+                    legacy_single_files,
+                )
 
             self.logger.info(f"Found {len(plugin_candidates)} potential plugin(s)")
 
@@ -220,6 +226,13 @@ class PluginSystem(QObject):
             return
 
         plugin_id = metadata["plugin_id"]
+        if plugin_id != plugin_name:
+            self.logger.warning(
+                "Plugin id mismatch: folder='%s', plugin_id='%s', skipped",
+                plugin_name,
+                plugin_id,
+            )
+            return
 
         # Avoid duplicate plugin_id
         if plugin_id in self.discovered_plugins:

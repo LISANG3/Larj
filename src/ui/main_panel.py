@@ -779,7 +779,9 @@ class MainPanel(QWidget):
             "QListWidget::item { background: transparent; }"
         )
         self.search_results.setSpacing(1)
+        self.search_results.itemClicked.connect(self._on_search_result_clicked)
         self.search_results.itemDoubleClicked.connect(self._on_search_result_clicked)
+        self.search_results.itemActivated.connect(self._on_search_result_clicked)
         search_results_layout.addWidget(self.search_results)
 
         self.stacked_widget.addWidget(self.app_grid_widget)
@@ -790,7 +792,7 @@ class MainPanel(QWidget):
         # ── Footer ────────────────────────────────────────────────────
         footer_layout = QHBoxLayout()
         footer_layout.setContentsMargins(4, 0, 4, 0)
-        self.hint_label = QLabel("Esc 隐藏  ·  双击打开文件")
+        self.hint_label = QLabel("Esc 隐藏  ·  单击打开文件")
         self.hint_label.setObjectName("hintLabel")
         footer_layout.addWidget(self.hint_label)
         footer_layout.addStretch()
@@ -810,6 +812,7 @@ class MainPanel(QWidget):
         """Connect UI signals"""
         self.search_box.textChanged.connect(self._on_search_changed)
         self.search_engine.search_completed.connect(self.update_search_results)
+        self.search_engine.search_failed.connect(self._on_search_failed)
     
     def _on_search_changed(self, text: str):
         """Handle search box text change"""
@@ -1626,10 +1629,13 @@ class MainPanel(QWidget):
             self.logger.error(f"Failed to update search results: {e}")
     
     def _on_search_result_clicked(self, item: QListWidgetItem):
-        """Handle search result double click"""
+        """Handle search result activation"""
         try:
             result = item.data(Qt.UserRole)
-            path = result.get("path")
+            path = result.get("open_path") or result.get("path") or ""
+            path = str(path).strip()
+            if not path:
+                raise ValueError("Empty search result path")
             
             if os.name == 'nt':
                 os.startfile(path)
@@ -1643,6 +1649,18 @@ class MainPanel(QWidget):
             
         except Exception as e:
             self.logger.error(f"Failed to open file: {e}", exc_info=True)
+            QMessageBox.warning(self, "打开失败", str(e))
+
+    def _on_search_failed(self, message: str):
+        try:
+            if not self.isVisible():
+                return
+            if self.stacked_widget.currentWidget() is not self.search_results_widget:
+                return
+            self.logger.warning(f"Search failed: {message}")
+            QMessageBox.warning(self, "搜索失败", message)
+        except Exception as e:
+            self.logger.error(f"Failed to handle search error: {e}", exc_info=True)
     
     def focus_search(self):
         """Focus the search box"""
@@ -1970,11 +1988,36 @@ try {
     Copy-Merge -Source $payloadRoot -Destination $appPath -ExcludeNames @("config")
     Set-Content -LiteralPath (Join-Path $appPath "VERSION") -Value $NewVersion -Encoding UTF8
 
-    Write-State -Status "success" -ErrorMessage ""
-    $targetPath = Join-Path $appPath $TargetExe
-    if (Test-Path $targetPath) {
-        Start-Process -FilePath $targetPath -WorkingDirectory $appPath
+    $targetCandidates = @()
+    if ($TargetExe) {
+        $targetCandidates += (Join-Path $appPath $TargetExe)
     }
+    $targetCandidates += (Join-Path $appPath "Larj.exe")
+    $targetCandidates += (Join-Path $appPath ("Larj_v" + $NewVersion + ".exe"))
+
+    $targetPath = $null
+    foreach ($candidate in $targetCandidates) {
+        if ($candidate -and (Test-Path $candidate)) {
+            $targetPath = $candidate
+            break
+        }
+    }
+
+    if (-not $targetPath) {
+        $latestVersioned = Get-ChildItem -LiteralPath $appPath -Filter "Larj_v*.exe" -File -ErrorAction SilentlyContinue |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+        if ($latestVersioned) {
+            $targetPath = $latestVersioned.FullName
+        }
+    }
+
+    if (-not $targetPath) {
+        throw "Updated executable not found for restart."
+    }
+
+    Write-State -Status "success" -ErrorMessage ""
+    Start-Process -FilePath $targetPath -WorkingDirectory $appPath
 } catch {
     $errorMessage = $_.Exception.Message
     try {

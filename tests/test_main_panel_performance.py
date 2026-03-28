@@ -20,13 +20,18 @@ from src.ui.main_panel import MainPanel
 
 
 class _DummySignal:
+    def __init__(self):
+        self._callbacks = []
+
     def connect(self, _fn):
+        self._callbacks.append(_fn)
         return None
 
 
 class _DummySearchEngine:
     def __init__(self):
         self.search_completed = _DummySignal()
+        self.search_failed = _DummySignal()
 
     def search(self, _text):
         return None

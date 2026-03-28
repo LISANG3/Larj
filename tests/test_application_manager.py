@@ -7,7 +7,7 @@ Performance-oriented tests for ApplicationManager.
 import os
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from PyQt5.QtWidgets import QApplication
@@ -46,3 +46,22 @@ def test_update_usage_stats_missing_app_avoids_disk_write(mock_config_manager):
     manager._update_usage_stats("missing-id")
 
     mock_config_manager.save_apps.assert_not_called()
+
+
+def test_split_launch_args_handles_empty_and_quoted():
+    assert ApplicationManager._split_launch_args("") == []
+    assert ApplicationManager._split_launch_args(' --mode "safe run" ') == ["--mode", "safe run"]
+
+
+def test_launch_app_uses_startfile_without_shell(mock_config_manager):
+    manager = ApplicationManager(mock_config_manager)
+    app_info = {"id": "app-1", "path": r"C:\Windows\notepad.exe", "args": "--help"}
+
+    with patch("pathlib.Path.exists", return_value=True), \
+         patch("pathlib.Path.is_dir", return_value=False), \
+         patch("src.core.application_manager.os.startfile") as startfile, \
+         patch("src.core.application_manager.subprocess.Popen") as popen:
+        manager.launch_app(app_info)
+
+    assert startfile.called
+    popen.assert_not_called()
