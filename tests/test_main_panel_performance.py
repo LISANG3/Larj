@@ -81,3 +81,19 @@ def test_load_apps_force_rebuild_even_when_state_unchanged():
 
     panel._load_apps(force=True)
     assert panel._create_app_button.call_count == 1
+
+
+def test_global_mouse_click_hides_panel_without_cross_thread_qwidget_access():
+    panel = _build_panel([{"id": "app-1", "name": "A", "path": "a.exe"}])
+    panel.show = MagicMock()
+    panel.hide = MagicMock()
+    panel.reset_panel_state = MagicMock()
+    panel._settings_dialog = None
+    panel.config_manager.get.side_effect = lambda key, default=None: True if key == "window.hide_on_focus_loss" else default
+
+    with patch.object(panel, "isVisible", return_value=True), \
+            patch.object(panel, "mapFromGlobal", return_value=panel.rect().bottomRight() + panel.rect().center()):
+        panel._on_global_mouse_click(9999, 9999)
+
+    panel.hide.assert_called_once()
+    panel.reset_panel_state.assert_called_once()

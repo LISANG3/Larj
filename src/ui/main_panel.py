@@ -25,8 +25,9 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, pyqtSignal, QTimer, QMimeData, QPoint, QSize, QRectF
 from PyQt5.QtGui import QIcon, QPixmap, QFont, QColor, QPalette, QLinearGradient, QBrush, QPainter, QPen, QDrag, QPainterPath, QRegion
 from pynput import mouse
-from src.core.hotkey_listener import detect_hotkey, DEFAULT_TRIGGER_KEY
+from src.core.hotkey_listener import DEFAULT_TRIGGER_KEY
 from src.core.update_service import UpdateService
+from src.ui.update_workers import UpdateCheckWorker, UpdateDownloadWorker, HotkeyDetectWorker
 
 
 def _hicon_to_pixmap(hicon, size: int) -> QPixmap:
@@ -672,6 +673,7 @@ class MainPanel(QWidget):
     
     app_clicked = pyqtSignal(dict)
     search_changed = pyqtSignal(str)
+    global_mouse_clicked = pyqtSignal(int, int)
     MEMORY_PLACEHOLDER = "-- MB"
     MEMORY_UPDATE_INTERVAL_MS = 2000
     
@@ -688,6 +690,12 @@ class MainPanel(QWidget):
         self._accept_search_results = False
         self._last_apps_signature = None
         self.update_service = UpdateService(self.config_manager)
+        self._update_button = None
+        self._update_check_worker = None
+        self._update_download_worker = None
+        self._pending_update_info = None
+        self._hotkey_detect_worker = None
+        self.global_mouse_clicked.connect(self._on_global_mouse_click)
         
         self._setup_ui()
         self._connect_signals()
@@ -1061,6 +1069,10 @@ class MainPanel(QWidget):
         args_input = QLineEdit()
         args_input.setText(app.get("args", ""))
         form_layout.addRow("参数:", args_input)
+
+        prefer_activate_checkbox = QCheckBox("优先唤起已运行窗口（未运行时再启动）")
+        prefer_activate_checkbox.setChecked(bool(app.get("prefer_activate_existing", False)))
+        form_layout.addRow("行为:", prefer_activate_checkbox)
         
         layout.addLayout(form_layout)
         
@@ -1077,6 +1089,7 @@ class MainPanel(QWidget):
                 updated_app = app.copy()
                 updated_app["name"] = new_name
                 updated_app["args"] = new_args
+                updated_app["prefer_activate_existing"] = prefer_activate_checkbox.isChecked()
                 self.application_manager.update_app(app.get("id"), updated_app)
                 self._load_apps(force=True)
 
@@ -1106,25 +1119,12 @@ class MainPanel(QWidget):
     
     def _move_app(self, app: dict, direction: int):
         """Move app up or down in the list"""
-        apps = self.config_manager.get_apps()
         app_id = app.get("id")
-        
-        current_index = -1
-        for i, a in enumerate(apps):
-            if a.get("id") == app_id:
-                current_index = i
-                break
-        
-        if current_index == -1:
+        if not app_id:
             return
-        
-        new_index = current_index + direction
-        if new_index < 0 or new_index >= len(apps):
-            return
-        
-        apps[current_index], apps[new_index] = apps[new_index], apps[current_index]
-        self.config_manager.save_apps()
-        self._load_apps(force=True)
+        moved = self.application_manager.move_app(app_id, direction)
+        if moved:
+            self._load_apps(force=True)
     
     def _on_app_clicked(self, app: dict):
         """Handle app button click"""
@@ -1158,21 +1158,9 @@ class MainPanel(QWidget):
             elif action == add_folder_action:
                 folder_path = QFileDialog.getExistingDirectory(self, "选择文件夹")
                 if folder_path:
-                    folder_name = Path(folder_path).name
-                    app_data = {
-                        "id": str(uuid.uuid4()),
-                        "name": folder_name,
-                        "path": folder_path,
-                        "icon_path": "",
-                        "args": "",
-                        "is_folder": True,
-                        "usage_count": 0,
-                        "created_at": datetime.now().isoformat(),
-                        "last_used": None
-                    }
-                    self.config_manager.add_app(app_data)
+                    self.application_manager.add_folder(folder_path)
                     self._load_apps(force=True)
-                    self.logger.info(f"Added folder: {folder_name}")
+                    self.logger.info(f"Added folder: {Path(folder_path).name}")
                     
         except Exception as e:
             self.logger.error(f"Failed to add: {e}", exc_info=True)
@@ -1238,10 +1226,24 @@ class MainPanel(QWidget):
         
         def on_detect_hotkey():
             dialog.setWindowTitle("设置（按下任意键或鼠标键）")
-            detected = detect_hotkey()
-            if detected:
-                hotkey_input.setText(detected)
-            dialog.setWindowTitle("设置")
+            detect_hotkey_button.setEnabled(False)
+            detect_hotkey_button.setText("检测中...")
+            worker = HotkeyDetectWorker()
+            self._hotkey_detect_worker = worker
+
+            def _on_detected(detected: str):
+                if detected:
+                    hotkey_input.setText(detected)
+                dialog.setWindowTitle("设置")
+                detect_hotkey_button.setEnabled(True)
+                detect_hotkey_button.setText("检测")
+
+            def _on_finished():
+                self._hotkey_detect_worker = None
+
+            worker.detected.connect(_on_detected)
+            worker.finished.connect(_on_finished)
+            worker.start()
         
         detect_hotkey_button.clicked.connect(on_detect_hotkey)
         
@@ -1275,6 +1277,7 @@ class MainPanel(QWidget):
         update_btn.setCursor(Qt.PointingHandCursor)
         update_btn.setStyleSheet(ModernStyle.SAVE_BUTTON_STYLE)
         update_btn.clicked.connect(self._check_and_update)
+        self._update_button = update_btn
         update_hint = QLabel("从 GitHub Releases 拉取更新（本地数据本地优先保留）")
         update_hint.setStyleSheet("font-size: 12px; color: #64748b;")
         update_box = QWidget()
@@ -1349,9 +1352,16 @@ class MainPanel(QWidget):
                 config_schema = metadata.get("config_schema", {})
                 if config_schema:
                     plugin_settings_widgets[plugin_id] = {}
+                    secret_fields = {
+                        key for key, schema in config_schema.items()
+                        if isinstance(schema, dict) and schema.get("secret", False)
+                    }
                     
                     # Load saved config for this plugin
-                    saved_config = self.plugin_system.get_plugin_config(plugin_id) if self.plugin_system else {}
+                    saved_config = (
+                        self.plugin_system.get_plugin_config(plugin_id, secret_fields=secret_fields)
+                        if self.plugin_system else {}
+                    )
                     
                     settings_form = QWidget()
                     settings_form.setObjectName("pluginSettingsForm")
@@ -1557,19 +1567,19 @@ class MainPanel(QWidget):
         
         try:
             if dialog.exec_() == QDialog.Accepted:
-                self.config_manager.set("hotkey.enabled", hotkey_enabled_checkbox.isChecked())
-                self.config_manager.set("hotkey.trigger_key", hotkey_input.text().strip() or DEFAULT_TRIGGER_KEY)
-                self.config_manager.set("window.follow_mouse", follow_mouse_checkbox.isChecked())
-                self.config_manager.set("window.hide_on_focus_loss", hide_on_focus_loss_checkbox.isChecked())
-                self.config_manager.set("search.max_results", max_results_spinbox.value())
+                self.config_manager.set_many({
+                    "hotkey.enabled": hotkey_enabled_checkbox.isChecked(),
+                    "hotkey.trigger_key": hotkey_input.text().strip() or DEFAULT_TRIGGER_KEY,
+                    "window.follow_mouse": follow_mouse_checkbox.isChecked(),
+                    "window.hide_on_focus_loss": hide_on_focus_loss_checkbox.isChecked(),
+                    "search.max_results": max_results_spinbox.value(),
+                    "appearance.background_type": bg_type_combo.currentData(),
+                    "appearance.background_color": solid_color_btn.property("color_value"),
+                    "appearance.background_image": image_path_input.text(),
+                    "appearance.accent_color": accent_color_btn.property("color_value"),
+                })
                 
                 self._set_autostart(autostart_checkbox.isChecked())
-
-                # Save appearance settings
-                self.config_manager.set("appearance.background_type", bg_type_combo.currentData())
-                self.config_manager.set("appearance.background_color", solid_color_btn.property("color_value"))
-                self.config_manager.set("appearance.background_image", image_path_input.text())
-                self.config_manager.set("appearance.accent_color", accent_color_btn.property("color_value"))
                 self.update()  # Repaint main panel with new background
                 
                 # Save plugin enable/disable state
@@ -1589,10 +1599,16 @@ class MainPanel(QWidget):
                 # Save per-plugin config to config/plugins/[plugin_id].json
                 for plugin_id, widgets in plugin_settings_widgets.items():
                     settings = {}
+                    metadata = discovered.get(plugin_id, {})
+                    config_schema = metadata.get("config_schema", {})
+                    secret_fields = {
+                        key for key, schema in config_schema.items()
+                        if isinstance(schema, dict) and schema.get("secret", False)
+                    }
                     for setting_key, widget in widgets.items():
                         value = widget.text()
                         settings[setting_key] = value
-                    self.plugin_system.set_plugin_config(plugin_id, settings)
+                    self.plugin_system.set_plugin_config(plugin_id, settings, secret_fields=secret_fields)
                     # Apply settings to loaded plugin instance
                     if plugin_id in self.plugin_system.plugins:
                         self.plugin_system.plugins[plugin_id].apply_settings(settings)
@@ -1739,27 +1755,29 @@ class MainPanel(QWidget):
         """Start global mouse listener using pynput"""
         def on_click(x, y, button, pressed):
             if pressed and button == mouse.Button.left:
-                if not self.isVisible():
-                    return
-                
-                hide_on_focus_loss = self.config_manager.get("window.hide_on_focus_loss", True)
-                if not hide_on_focus_loss:
-                    return
-                
-                click_global = QPoint(int(x), int(y))
-                local_pos = self.mapFromGlobal(click_global)
-                in_window = self.rect().contains(local_pos)
-                settings_visible = self._settings_dialog and self._settings_dialog.isVisible()
-                
-                if not in_window and not settings_visible:
-                    QTimer.singleShot(0, self._hide_and_clear)
+                self.global_mouse_clicked.emit(int(x), int(y))
         
         self._mouse_listener = mouse.Listener(on_click=on_click)
         self._mouse_listener.start()
         self.logger.debug("Global mouse listener started")
+
+    def _on_global_mouse_click(self, x: int, y: int):
+        """Handle global mouse click in UI thread to avoid cross-thread QWidget access."""
+        if not self.isVisible():
+            return
+        hide_on_focus_loss = self.config_manager.get("window.hide_on_focus_loss", True)
+        if not hide_on_focus_loss:
+            return
+
+        click_global = QPoint(int(x), int(y))
+        local_pos = self.mapFromGlobal(click_global)
+        in_window = self.rect().contains(local_pos)
+        settings_visible = self._settings_dialog and self._settings_dialog.isVisible()
+        if not in_window and not settings_visible:
+            self._hide_and_clear()
     
     def _hide_and_clear(self):
-        """Hide window and clear search (called from mouse listener thread)"""
+        """Hide window and clear search."""
         self.hide()
         self.reset_panel_state()
 
@@ -1822,13 +1840,6 @@ class MainPanel(QWidget):
             winreg.CloseKey(key)
         except Exception as e:
             self.logger.error(f"Failed to set autostart: {e}")
-
-    def closeEvent(self, event):
-        """Handle close event - stop mouse listener"""
-        if self._mouse_listener:
-            self._mouse_listener.stop()
-            self._mouse_listener = None
-        super().closeEvent(event)
 
     def paintEvent(self, event):
         """Paint the background using configured appearance settings"""
@@ -2086,30 +2097,95 @@ try {
         subprocess.Popen(cmd, cwd=str(app_dir))
 
     def _check_and_update(self):
-        """Check updates from GitHub Releases and trigger updater process."""
+        """Check updates asynchronously and trigger updater process."""
         try:
             if not self.config_manager.get("update.enabled", True):
                 QMessageBox.information(self, "更新", "更新功能已禁用")
                 return
-
-            info = self.update_service.check_for_update()
-            if info is None:
-                QMessageBox.information(self, "更新", "当前已是最新版本")
+            if self._update_check_worker or self._update_download_worker:
                 return
 
-            detail = f"发现新版本: v{info.version}\n资源包: {info.asset_name}\n\n是否下载并安装？"
-            reply = QMessageBox.question(self, "发现更新", detail, QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
-            if reply != QMessageBox.Yes:
-                return
-
-            package_path = self.update_service.download_update(info)
-            self._launch_updater(package_path, info.version)
-            QMessageBox.information(
-                self,
-                "开始更新",
-                "更新程序已启动。\n主程序即将退出并安装新版本，安装完成后会自动重启。",
-            )
-            QApplication.instance().quit()
+            self._set_update_button_state("检查中...", enabled=False)
+            worker = UpdateCheckWorker(self.update_service)
+            worker.check_completed.connect(self._on_update_check_completed)
+            worker.check_failed.connect(self._on_update_check_failed)
+            worker.finished.connect(self._clear_update_check_worker)
+            self._update_check_worker = worker
+            worker.start()
         except Exception as e:
             self.logger.error(f"Failed to update app: {e}", exc_info=True)
+            self._set_update_button_state("检查并更新", enabled=True)
             QMessageBox.warning(self, "更新失败", str(e))
+
+    def _set_update_button_state(self, text: str, enabled: bool):
+        if self._update_button is not None:
+            self._update_button.setText(text)
+            self._update_button.setEnabled(enabled)
+
+    def _clear_update_check_worker(self):
+        self._update_check_worker = None
+
+    def _clear_update_download_worker(self):
+        self._update_download_worker = None
+
+    def _on_update_check_failed(self, message: str):
+        self.logger.error(f"Failed to check update: {message}")
+        self._pending_update_info = None
+        self._set_update_button_state("检查并更新", enabled=True)
+        QMessageBox.warning(self, "更新失败", message)
+
+    def _on_update_check_completed(self, info):
+        if info is None:
+            self._set_update_button_state("检查并更新", enabled=True)
+            QMessageBox.information(self, "更新", "当前已是最新版本")
+            return
+
+        detail = f"发现新版本: v{info.version}\n资源包: {info.asset_name}\n\n是否下载并安装？"
+        reply = QMessageBox.question(self, "发现更新", detail, QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
+        if reply != QMessageBox.Yes:
+            self._set_update_button_state("检查并更新", enabled=True)
+            return
+
+        self._pending_update_info = info
+        self._set_update_button_state("下载中...", enabled=False)
+        worker = UpdateDownloadWorker(self.update_service, info)
+        worker.download_completed.connect(self._on_update_download_completed)
+        worker.download_failed.connect(self._on_update_download_failed)
+        worker.finished.connect(self._clear_update_download_worker)
+        self._update_download_worker = worker
+        worker.start()
+
+    def _on_update_download_failed(self, message: str):
+        self.logger.error(f"Failed to download update: {message}")
+        self._pending_update_info = None
+        self._set_update_button_state("检查并更新", enabled=True)
+        QMessageBox.warning(self, "更新失败", message)
+
+    def _on_update_download_completed(self, package_path: str):
+        info = self._pending_update_info
+        self._pending_update_info = None
+        if info is None:
+            self._set_update_button_state("检查并更新", enabled=True)
+            QMessageBox.warning(self, "更新失败", "更新元数据丢失")
+            return
+
+        self._launch_updater(Path(package_path), info.version)
+        QMessageBox.information(
+            self,
+            "开始更新",
+            "更新程序已启动。\n主程序即将退出并安装新版本，安装完成后会自动重启。",
+        )
+        QApplication.instance().quit()
+
+    def closeEvent(self, event):
+        """Handle close event - stop listeners and background workers."""
+        for worker_name in ("_update_check_worker", "_update_download_worker", "_hotkey_detect_worker"):
+            worker = getattr(self, worker_name, None)
+            if worker and worker.isRunning():
+                worker.quit()
+                worker.wait(1500)
+            setattr(self, worker_name, None)
+        if self._mouse_listener:
+            self._mouse_listener.stop()
+            self._mouse_listener = None
+        super().closeEvent(event)

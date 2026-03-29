@@ -10,6 +10,7 @@ import logging
 import shlex
 import subprocess
 import uuid
+import psutil
 from pathlib import Path
 from typing import Dict, List
 from datetime import datetime
@@ -41,8 +42,8 @@ class ApplicationManager(QObject):
     def reload_config(self):
         """Reload configuration"""
         try:
-            self.auto_sort = self.config_manager.get("application.auto_sort", True)
-            self.sort_by = self.config_manager.get("application.sort_by", "usage")
+            self.auto_sort = self.config_manager.get("application.auto_sort", False)
+            self.sort_by = self.config_manager.get("application.sort_by", "manual")
             
             self.logger.info(f"App config reloaded: auto_sort={self.auto_sort}, sort_by={self.sort_by}")
             
@@ -63,9 +64,8 @@ class ApplicationManager(QObject):
     def _sort_apps(self, apps: List[Dict]) -> List[Dict]:
         """Sort applications based on configuration"""
         try:
-            if self.sort_by == "usage":
-                # Sort by usage count (descending)
-                return sorted(apps, key=lambda x: x.get("usage_count", 0), reverse=True)
+            if self.sort_by in {"manual", "usage"}:
+                return apps
             elif self.sort_by == "name":
                 # Sort by name (ascending)
                 return sorted(apps, key=lambda x: x.get("name", "").lower())
@@ -93,6 +93,7 @@ class ApplicationManager(QObject):
                 "path": path,
                 "icon_path": icon_path,
                 "args": args,
+                "prefer_activate_existing": False,
                 "usage_count": 0,
                 "created_at": datetime.now().isoformat(),
                 "last_used": None
@@ -110,6 +111,34 @@ class ApplicationManager(QObject):
             
         except Exception as e:
             self.logger.error(f"Failed to add app: {e}", exc_info=True)
+            raise
+
+    def add_folder(self, folder_path: str) -> Dict:
+        """Add a folder shortcut as an app entry."""
+        try:
+            path_obj = Path(folder_path)
+            if not path_obj.exists() or not path_obj.is_dir():
+                raise FileNotFoundError(f"Folder path not found: {folder_path}")
+
+            app_data = {
+                "id": str(uuid.uuid4()),
+                "name": path_obj.name,
+                "path": str(path_obj),
+                "icon_path": "",
+                "args": "",
+                "is_folder": True,
+                "prefer_activate_existing": False,
+                "usage_count": 0,
+                "created_at": datetime.now().isoformat(),
+                "last_used": None,
+            }
+            self.config_manager.add_app(app_data)
+            self._apps_cache = None
+            self.app_added.emit(app_data)
+            self.logger.info(f"Added folder: {app_data['name']}")
+            return app_data
+        except Exception as e:
+            self.logger.error(f"Failed to add folder: {e}", exc_info=True)
             raise
     
     def remove_app(self, app_id: str):
@@ -133,6 +162,27 @@ class ApplicationManager(QObject):
             
         except Exception as e:
             self.logger.error(f"Failed to update app: {e}")
+
+    def move_app(self, app_id: str, direction: int) -> bool:
+        """Move an app by direction (-1 up, +1 down) and persist order."""
+        try:
+            apps = self.config_manager.get_apps()
+            current_index = next((i for i, app in enumerate(apps) if app.get("id") == app_id), -1)
+            if current_index < 0:
+                return False
+
+            new_index = current_index + direction
+            if new_index < 0 or new_index >= len(apps):
+                return False
+
+            apps[current_index], apps[new_index] = apps[new_index], apps[current_index]
+            self.config_manager.save_apps()
+            self._apps_cache = None
+            self.logger.info(f"Moved app: {app_id}, direction={direction}")
+            return True
+        except Exception as e:
+            self.logger.error(f"Failed to move app: {e}", exc_info=True)
+            return False
     
     def launch_app(self, app_info: Dict):
         """Launch application or open folder"""
@@ -141,6 +191,7 @@ class ApplicationManager(QObject):
             path = app_info.get("path")
             args = app_info.get("args", "")
             is_folder = app_info.get("is_folder", False)
+            prefer_activate_existing = bool(app_info.get("prefer_activate_existing", False))
 
             if not path:
                 raise ValueError("Path is empty")
@@ -155,16 +206,23 @@ class ApplicationManager(QObject):
                 else:
                     subprocess.Popen(['xdg-open', str(path_obj)])
             else:
-                if os.name == 'nt':
-                    launch_args = args.strip() if isinstance(args, str) and args.strip() else None
-                    try:
-                        os.startfile(str(path_obj), arguments=launch_args)
-                    except TypeError:
+                activated_existing = False
+                if os.name == 'nt' and prefer_activate_existing:
+                    activated_existing = self._try_activate_existing_window(path_obj)
+
+                if not activated_existing:
+                    if os.name == 'nt':
+                        launch_args = args.strip() if isinstance(args, str) and args.strip() else None
+                        try:
+                            os.startfile(str(path_obj), arguments=launch_args)
+                        except TypeError:
+                            cmd = [str(path_obj)] + self._split_launch_args(args)
+                            subprocess.Popen(cmd, shell=False)
+                    else:
                         cmd = [str(path_obj)] + self._split_launch_args(args)
                         subprocess.Popen(cmd, shell=False)
                 else:
-                    cmd = [str(path_obj)] + self._split_launch_args(args)
-                    subprocess.Popen(cmd, shell=False)
+                    self.logger.info(f"Activated existing window for {path_obj.name}")
             
             self._update_usage_stats(app_id)
             self.app_launched.emit(app_id)
@@ -183,6 +241,65 @@ class ApplicationManager(QObject):
             return shlex.split(args, posix=True)
         except ValueError as e:
             raise ValueError(f"Invalid launch arguments: {args}") from e
+
+    def _try_activate_existing_window(self, path_obj: Path) -> bool:
+        """Try to bring an already running app window to foreground on Windows."""
+        if os.name != 'nt':
+            return False
+
+        target_exe_name = path_obj.name.lower()
+        if not target_exe_name:
+            return False
+
+        try:
+            import win32con
+            import win32gui
+            import win32process
+        except ImportError as e:
+            self.logger.warning(f"Cannot activate existing window without pywin32: {e}")
+            return False
+
+        matched = False
+
+        def _enum_windows(hwnd, _):
+            nonlocal matched
+            if matched or not win32gui.IsWindowVisible(hwnd):
+                return
+
+            try:
+                _, pid = win32process.GetWindowThreadProcessId(hwnd)
+            except win32gui.error:
+                return
+            if pid <= 0:
+                return
+
+            try:
+                proc = psutil.Process(pid)
+                exe_name = Path(proc.exe()).name.lower()
+            except (psutil.Error, OSError, ValueError):
+                return
+
+            if exe_name != target_exe_name:
+                return
+
+            try:
+                if win32gui.IsIconic(hwnd):
+                    win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+                else:
+                    win32gui.ShowWindow(hwnd, win32con.SW_SHOW)
+                win32gui.BringWindowToTop(hwnd)
+                win32gui.SetForegroundWindow(hwnd)
+                matched = True
+            except win32gui.error as e:
+                self.logger.warning(f"Failed to focus window handle {hwnd} for {target_exe_name}: {e}")
+
+        try:
+            win32gui.EnumWindows(_enum_windows, None)
+        except win32gui.error as e:
+            self.logger.warning(f"Failed while enumerating windows for {target_exe_name}: {e}")
+            return False
+
+        return matched
     
     def _update_usage_stats(self, app_id: str):
         """Update application usage statistics"""

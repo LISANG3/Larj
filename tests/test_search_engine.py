@@ -7,6 +7,7 @@ Tests for cold-search based SearchEngine module.
 import os
 import sys
 import time
+import heapq
 from collections import OrderedDict
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -143,6 +144,30 @@ class TestColdSearchRanking:
 
         optimized = SearchWorker._optimize_results("hello", candidates(), limit=1)
         assert optimized == [r"C:\a\hello.txt"]
+
+    def test_optimize_results_uses_heap_for_topk(self, monkeypatch):
+        calls = {"push": 0, "replace": 0}
+        real_push = heapq.heappush
+        real_replace = heapq.heapreplace
+
+        def wrapped_push(heap, item):
+            calls["push"] += 1
+            return real_push(heap, item)
+
+        def wrapped_replace(heap, item):
+            calls["replace"] += 1
+            return real_replace(heap, item)
+
+        monkeypatch.setattr(heapq, "heappush", wrapped_push)
+        monkeypatch.setattr(heapq, "heapreplace", wrapped_replace)
+
+        candidates = (
+            (fr"C:\a\hello-{i}.txt", f"hello-{i}.txt", r"C:\a")
+            for i in range(60)
+        )
+        optimized = SearchWorker._optimize_results("hello", candidates, limit=10)
+        assert len(optimized) == 10
+        assert calls["push"] > 0
 
 
 class TestResultShape:

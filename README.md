@@ -6,7 +6,7 @@ Larj 是一个轻量级的 Windows 桌面效率工具，提供快速文件搜索
 
 - **全局热键触发**: 鼠标侧键 (XButton1) 或键盘快捷键 (Ctrl+Space)
 - **快速文件搜索**: 集成 Everything 实现即时文件搜索
-- **应用快捷启动**: 一键启动常用应用，自动按使用频率排序
+- **应用快捷启动**: 一键启动常用应用，默认保持手动顺序（可配置排序方式）
 - **插件系统**: 可扩展的插件架构，支持自定义功能
 - **轻量高效**: 内存占用 < 50MB，搜索响应 < 200ms
 
@@ -112,7 +112,7 @@ pyinstaller larj.spec --clean
 
 1. 点击应用图标启动应用
 2. 点击 "+ 添加应用" 添加新应用
-3. 应用自动按使用频率排序
+3. 应用默认保持手动顺序（可在配置中调整排序方式）
 
 ## 项目结构
 
@@ -275,8 +275,8 @@ def create_plugin():
     "cache_timeout": 60
   },
   "application": {
-    "auto_sort": true,
-    "sort_by": "usage"
+    "auto_sort": false,
+    "sort_by": "manual"
   },
   "plugin": {
     "enabled_plugins": ["mtran_server", "ocr"],
@@ -289,7 +289,6 @@ def create_plugin():
 
 - 插件启用列表：`config/settings.json` → `plugin.enabled_plugins`
 - 插件独立配置：`config/plugins/{plugin_id}.json`
-- 旧版迁移来源（legacy）：`config/plugins.json`（仅用于历史数据迁移，不再作为当前主配置）
 
 插件独立配置示例（`config/plugins/{plugin_id}.json`）：
 
