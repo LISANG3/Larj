@@ -6,13 +6,14 @@ Manages plugin discovery, loading, and lifecycle
 Plugins are auto-discovered from the plugins/ directory and expose metadata via get_metadata()
 """
 
+import base64
 import json
 import logging
 import importlib.util
 import os
 import tempfile
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional, Set
 from PyQt5.QtCore import QObject, pyqtSignal
 
 
@@ -66,6 +67,7 @@ class PluginSystem(QObject):
     plugin_loaded = pyqtSignal(str)  # plugin_id
     plugin_unloaded = pyqtSignal(str)  # plugin_id
     plugin_error = pyqtSignal(str, str)  # plugin_id, error_message
+    SECRET_PREFIX = "__larj_sec_v1__:"
 
     def __init__(self, config_manager):
         super().__init__()
@@ -86,44 +88,11 @@ class PluginSystem(QObject):
         # Loaded (active) plugin instances: {plugin_id: PluginBase}
         self.plugins: Dict[str, PluginBase] = {}
 
-        # Migrate old plugin config if needed
-        self._migrate_old_config()
-
         # Discover and load enabled plugins
         self._discover_plugins()
         self._load_enabled_plugins()
 
         self.logger.info("PluginSystem initialized")
-
-    def _migrate_old_config(self):
-        """Migrate old config/plugins.json data to per-plugin config files"""
-        try:
-            old_plugins_file = Path("config") / "plugins.json"
-            if not old_plugins_file.exists():
-                return
-
-            with open(old_plugins_file, 'r', encoding='utf-8') as f:
-                old_data = json.load(f)
-
-            plugins_data = old_data.get("plugins", {})
-            if not plugins_data:
-                return
-
-            for plugin_id, plugin_config in plugins_data.items():
-                if not isinstance(plugin_config, dict):
-                    continue
-                config_file = self.plugin_config_dir / f"{plugin_id}.json"
-                if not config_file.exists():
-                    self._atomic_write_json(config_file, plugin_config)
-                    self.logger.info(f"Migrated config for plugin: {plugin_id}")
-
-            # Clear old plugins node after migration
-            old_data["plugins"] = {}
-            self._atomic_write_json(old_plugins_file, old_data)
-            self.logger.info("Old plugin config migration complete")
-
-        except Exception as e:
-            self.logger.error(f"Failed to migrate old plugin config: {e}", exc_info=True)
 
     def _discover_plugins(self):
         """Discover directory-based plugins and extract metadata."""
@@ -135,11 +104,11 @@ class PluginSystem(QObject):
             plugin_candidates = []
 
             # Directory plugins only: plugins/<plugin_name>/__init__.py
-            legacy_single_files = []
+            single_file_plugins = []
             for py_file in self.plugin_dir.glob("*.py"):
                 if py_file.name.startswith("_"):
                     continue
-                legacy_single_files.append(py_file.name)
+                single_file_plugins.append(py_file.name)
 
             for subdir in self.plugin_dir.iterdir():
                 if not subdir.is_dir() or subdir.name.startswith("_"):
@@ -150,10 +119,10 @@ class PluginSystem(QObject):
                 else:
                     self.logger.warning("Plugin directory missing __init__.py, skipped: %s", subdir.name)
 
-            if legacy_single_files:
+            if single_file_plugins:
                 self.logger.warning(
-                    "Legacy single-file plugins are no longer discovered; migrate to folders: %s",
-                    legacy_single_files,
+                    "Single-file plugins are not discovered; folder plugins only: %s",
+                    single_file_plugins,
                 )
 
             self.logger.info(f"Found {len(plugin_candidates)} potential plugin(s)")
@@ -303,7 +272,8 @@ class PluginSystem(QObject):
             # Load saved config and apply
             config_schema = metadata.get("config_schema", {})
             if config_schema:
-                saved_config = self.get_plugin_config(plugin_id)
+                secret_fields = self._extract_secret_fields(config_schema)
+                saved_config = self.get_plugin_config(plugin_id, secret_fields=secret_fields)
                 if saved_config and hasattr(plugin_instance, 'apply_settings'):
                     plugin_instance.apply_settings(saved_config)
 
@@ -405,25 +375,80 @@ class PluginSystem(QObject):
         """Get metadata for all discovered plugins: {plugin_id: metadata_dict}"""
         return {pid: info["metadata"] for pid, info in self.discovered_plugins.items()}
 
-    def get_plugin_config(self, plugin_id: str) -> dict:
+    @staticmethod
+    def _extract_secret_fields(config_schema: dict) -> Set[str]:
+        return {k for k, schema in config_schema.items() if isinstance(schema, dict) and schema.get("secret", False)}
+
+    @classmethod
+    def _encrypt_secret_value(cls, value: str) -> str:
+        if not isinstance(value, str):
+            return value
+        if value.startswith(cls.SECRET_PREFIX):
+            return value
+        if os.name != "nt":
+            return value
+        try:
+            import win32crypt
+            encrypted = win32crypt.CryptProtectData(value.encode("utf-8"), "larj-plugin-secret", None, None, None, 0)
+            return cls.SECRET_PREFIX + base64.b64encode(encrypted).decode("ascii")
+        except Exception:
+            return value
+
+    @classmethod
+    def _decrypt_secret_value(cls, value: str) -> str:
+        if not isinstance(value, str):
+            return value
+        if not value.startswith(cls.SECRET_PREFIX):
+            return value
+        if os.name != "nt":
+            return value
+        payload = value[len(cls.SECRET_PREFIX):]
+        try:
+            import win32crypt
+            raw = base64.b64decode(payload)
+            _, decrypted = win32crypt.CryptUnprotectData(raw, None, None, None, 0)
+            return decrypted.decode("utf-8")
+        except Exception:
+            return value
+
+    def _protect_config_data(self, config_data: dict, secret_fields: Set[str]) -> dict:
+        data = dict(config_data or {})
+        for key in secret_fields:
+            if key in data:
+                data[key] = self._encrypt_secret_value(str(data[key]))
+        return data
+
+    def _unprotect_config_data(self, config_data: dict, secret_fields: Set[str]) -> dict:
+        data = dict(config_data or {})
+        for key in secret_fields:
+            if key in data:
+                data[key] = self._decrypt_secret_value(data[key])
+        return data
+
+    def get_plugin_config(self, plugin_id: str, secret_fields: Optional[Set[str]] = None) -> dict:
         """Read per-plugin configuration from config/plugins/[plugin_id].json"""
         config_file = self.plugin_config_dir / f"{plugin_id}.json"
+        fields = set(secret_fields or set())
         try:
             if config_file.exists():
                 with open(config_file, 'r', encoding='utf-8') as f:
-                    return json.load(f)
+                    data = json.load(f)
+                    if isinstance(data, dict):
+                        return self._unprotect_config_data(data, fields)
         except Exception as e:
             self.logger.error(f"Failed to read config for plugin '{plugin_id}': {e}")
         return {}
 
-    def set_plugin_config(self, plugin_id: str, config_data: dict):
+    def set_plugin_config(self, plugin_id: str, config_data: dict, secret_fields: Optional[Set[str]] = None):
         """Write per-plugin configuration to config/plugins/[plugin_id].json (atomic)"""
         config_file = self.plugin_config_dir / f"{plugin_id}.json"
+        fields = set(secret_fields or set())
         try:
             # Merge with existing config
-            existing = self.get_plugin_config(plugin_id)
+            existing = self.get_plugin_config(plugin_id, secret_fields=fields)
             existing.update(config_data)
-            self._atomic_write_json(config_file, existing)
+            protected = self._protect_config_data(existing, fields)
+            self._atomic_write_json(config_file, protected)
             self.logger.debug(f"Saved config for plugin: {plugin_id}")
         except Exception as e:
             self.logger.error(f"Failed to save config for plugin '{plugin_id}': {e}")

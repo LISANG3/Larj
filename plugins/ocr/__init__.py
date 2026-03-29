@@ -17,11 +17,71 @@ from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTextEdit, QPushButton,
     QLabel, QWidget, QApplication
 )
-from PyQt5.QtCore import Qt, QRect, pyqtSignal, QTimer
+from PyQt5.QtCore import Qt, QRect, pyqtSignal, QThread
 from PyQt5.QtGui import QPixmap, QPainter, QColor, QPen, QGuiApplication
 
-from src.core.plugin_system import PluginBase
 from src.plugins.tencent_signer import TencentSigner
+from src.plugins.tencent_plugin_base import TencentPluginBase
+
+
+class OcrWorker(QThread):
+    finished = pyqtSignal(list)
+    error = pyqtSignal(str)
+
+    def __init__(self, secret_id: str, secret_key: str, region: str, image_path: str):
+        super().__init__()
+        self.secret_id = secret_id
+        self.secret_key = secret_key
+        self.region = region
+        self.image_path = image_path
+
+    def run(self):
+        try:
+            if not self.secret_id or not self.secret_key:
+                self.error.emit("请先在设置中配置 SecretId 和 SecretKey")
+                return
+
+            with open(self.image_path, "rb") as f:
+                image_data = f.read()
+            image_base64 = base64.b64encode(image_data).decode("utf-8")
+
+            service = "ocr"
+            host = "ocr.tencentcloudapi.com"
+            action = "GeneralAccurateOCR"
+            version = "2018-11-19"
+            payload = json.dumps({"ImageBase64": image_base64})
+
+            headers = TencentSigner.sign(
+                self.secret_id,
+                self.secret_key,
+                service,
+                host,
+                action,
+                version,
+                self.region,
+                payload,
+            )
+            response = requests.post(f"https://{host}/", headers=headers, data=payload, timeout=30)
+            if response.status_code != 200:
+                self.error.emit(f"HTTP错误: {response.status_code}")
+                return
+
+            result = response.json()
+            response_obj = result.get("Response")
+            if not isinstance(response_obj, dict):
+                self.error.emit("响应格式错误")
+                return
+            if "Error" in response_obj:
+                error_msg = response_obj["Error"].get("Message", "Unknown error")
+                self.error.emit(f"API错误: {error_msg}")
+                return
+            self.finished.emit(response_obj.get("TextDetections", []))
+        except requests.exceptions.Timeout:
+            self.error.emit("请求超时")
+        except requests.exceptions.ConnectionError:
+            self.error.emit("网络连接失败")
+        except Exception as e:
+            self.error.emit(f"识别失败: {e}")
 
 
 class ScreenCaptureWidget(QWidget):
@@ -197,17 +257,16 @@ class OcrResultDialog(QDialog):
         clipboard.setText(self.result_text.toPlainText())
 
 
-class TencentOcrPlugin(PluginBase):
+class TencentOcrPlugin(TencentPluginBase):
     """Tencent Cloud OCR Plugin for screen text recognition"""
     
     def __init__(self):
+        super().__init__()
         self.logger = logging.getLogger(__name__)
-        self._secret_id = ""
-        self._secret_key = ""
-        self._region = "ap-beijing"
         self._capture_widget = None
         self._result_dialog = None
         self._temp_image_path = None
+        self._ocr_worker = None
     
     def get_metadata(self) -> dict:
         return {
@@ -224,36 +283,6 @@ class TencentOcrPlugin(PluginBase):
             }
         }
     
-    def get_secret_id(self) -> str:
-        return self._secret_id
-
-    @property
-    def secret_id(self) -> str:
-        return self._secret_id
-    
-    def set_secret_id(self, secret_id: str):
-        self._secret_id = secret_id
-    
-    def get_secret_key(self) -> str:
-        return self._secret_key
-
-    @property
-    def secret_key(self) -> str:
-        return self._secret_key
-    
-    def set_secret_key(self, secret_key: str):
-        self._secret_key = secret_key
-    
-    def get_region(self) -> str:
-        return self._region
-
-    @property
-    def region(self) -> str:
-        return self._region
-    
-    def set_region(self, region: str):
-        self._region = region
-    
     def handle_click(self):
         self.start_capture()
     
@@ -269,70 +298,49 @@ class TencentOcrPlugin(PluginBase):
             screen = QGuiApplication.primaryScreen()
             screenshot = screen.grabWindow(0, rect.x(), rect.y(), rect.width(), rect.height())
             
-            temp_dir = tempfile.gettempdir()
-            self._temp_image_path = os.path.join(temp_dir, "larj_ocr_capture.png")
+            with tempfile.NamedTemporaryFile(prefix="larj_ocr_", suffix=".png", delete=False) as tmp:
+                self._temp_image_path = tmp.name
             screenshot.save(self._temp_image_path, "PNG")
             
             self._result_dialog = OcrResultDialog()
             self._result_dialog.show()
-            
-            QTimer.singleShot(100, self.do_ocr)
+            self.do_ocr()
             
         except Exception as e:
             self.logger.error(f"Capture failed: {e}", exc_info=True)
     
     def do_ocr(self):
-        """Execute OCR using Tencent Cloud API"""
-        try:
-            if not self._secret_id or not self._secret_key:
-                self._result_dialog.set_error("请先在设置中配置 SecretId 和 SecretKey")
-                return
-            
-            with open(self._temp_image_path, "rb") as f:
-                image_data = f.read()
-            image_base64 = base64.b64encode(image_data).decode('utf-8')
-            
-            service = "ocr"
-            host = "ocr.tencentcloudapi.com"
-            action = "GeneralAccurateOCR"
-            version = "2018-11-19"
-            
-            payload_dict = {
-                "ImageBase64": image_base64
-            }
-            payload = json.dumps(payload_dict)
-            
-            headers = TencentSigner.sign(
-                self._secret_id, self._secret_key,
-                service, host, action, version,
-                self._region, payload
-            )
-            
-            url = f"https://{host}/"
-            response = requests.post(url, headers=headers, data=payload, timeout=30)
-            
-            if response.status_code == 200:
-                result = response.json()
-                if "Response" in result:
-                    if "Error" in result["Response"]:
-                        error_msg = result["Response"]["Error"].get("Message", "Unknown error")
-                        self._result_dialog.set_error(f"API错误: {error_msg}")
-                    else:
-                        text_detections = result["Response"].get("TextDetections", [])
-                        self._result_dialog.set_result(text_detections)
-                else:
-                    self._result_dialog.set_error("响应格式错误")
-            else:
-                self._result_dialog.set_error(f"HTTP错误: {response.status_code}")
-                
-        except requests.exceptions.Timeout:
-            self._result_dialog.set_error("请求超时")
-        except requests.exceptions.ConnectionError:
-            self._result_dialog.set_error("网络连接失败")
-        except Exception as e:
-            self._result_dialog.set_error(f"识别失败: {e}")
-        finally:
+        """Execute OCR in background worker to avoid blocking UI."""
+        if not self._temp_image_path:
+            if self._result_dialog:
+                self._result_dialog.set_error("截图文件不存在")
+            return
+        worker = OcrWorker(
+            self._secret_id,
+            self._secret_key,
+            self._region,
+            self._temp_image_path,
+        )
+        self._ocr_worker = worker
+
+        def _on_finished(text_detections: List[Dict]):
+            if self._result_dialog:
+                self._result_dialog.set_result(text_detections)
             self.cleanup_temp_file()
+
+        def _on_error(error_msg: str):
+            if self._result_dialog:
+                self._result_dialog.set_error(error_msg)
+            self.cleanup_temp_file()
+
+        def _on_worker_done(*_args):
+            self._ocr_worker = None
+
+        worker.finished.connect(_on_finished)
+        worker.error.connect(_on_error)
+        worker.finished.connect(_on_worker_done)
+        worker.error.connect(lambda _msg: _on_worker_done())
+        worker.start()
     
     def cleanup_temp_file(self):
         """Delete temporary screenshot file"""
@@ -352,19 +360,14 @@ class TencentOcrPlugin(PluginBase):
             self._capture_widget.close()
         if self._result_dialog:
             self._result_dialog.close()
+        if self._ocr_worker and self._ocr_worker.isRunning():
+            self._ocr_worker.quit()
+            self._ocr_worker.wait(1500)
+        self._ocr_worker = None
         self.cleanup_temp_file()
         self.logger.info("TencentOcr plugin unloaded")
     
     def get_settings(self) -> dict:
         return {}
     
-    def apply_settings(self, settings: dict):
-        if "secret_id" in settings:
-            self.set_secret_id(settings["secret_id"])
-        if "secret_key" in settings:
-            self.set_secret_key(settings["secret_key"])
-        if "region" in settings:
-            self.set_region(settings["region"])
-
-
 plugin_class = TencentOcrPlugin

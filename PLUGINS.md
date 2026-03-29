@@ -85,7 +85,6 @@ config/
 │   ├── mtran_server.json   # 翻译插件配置
 │   ├── ocr.json            # OCR 插件配置
 │   └── my_plugin.json      # 自定义插件配置
-└── plugins.json            # legacy：仅用于旧版迁移来源，不作为当前主路径
 ```
 
 其中：

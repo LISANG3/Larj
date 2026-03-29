@@ -8,6 +8,7 @@ Handles configuration file read/write, validation, and hot reload
 import json
 import logging
 from pathlib import Path
+from copy import deepcopy
 from typing import Any, Dict
 from PyQt5.QtCore import QObject, pyqtSignal
 
@@ -47,8 +48,8 @@ class ConfigManager(QObject):
             "auto_start_everything": True
         },
         "application": {
-            "auto_sort": True,
-            "sort_by": "usage",  # usage, name, date
+            "auto_sort": False,
+            "sort_by": "manual",  # manual, usage, name, date
             "groups": []
         },
         "plugin": {
@@ -128,6 +129,16 @@ class ConfigManager(QObject):
             if isinstance(result[key], dict) and isinstance(default_value, dict):
                 result[key] = self._deep_fill_defaults(result[key], default_value)
         return result
+
+    def _deep_merge_dicts(self, base: Dict, patch: Dict) -> Dict:
+        """Deep-merge patch into base and return a new merged dict."""
+        merged = deepcopy(base)
+        for key, value in patch.items():
+            if isinstance(value, dict) and isinstance(merged.get(key), dict):
+                merged[key] = self._deep_merge_dicts(merged[key], value)
+            else:
+                merged[key] = deepcopy(value)
+        return merged
     
     def get(self, key_path: str, default: Any = None) -> Any:
         """
@@ -199,12 +210,37 @@ class ConfigManager(QObject):
     def update_config(self, config_data: Dict):
         """Update configuration with new data"""
         try:
-            self.settings.update(config_data)
+            self.settings = self._deep_merge_dicts(self.settings, config_data)
             self._save_settings()
             self.config_updated.emit()
             self.logger.info("Configuration updated")
         except Exception as e:
             self.logger.error(f"Failed to update configuration: {e}")
+
+    def set_many(self, updates: Dict[str, Any]):
+        """Set multiple configuration values and persist once when changed."""
+        try:
+            changed = False
+            for key_path, value in updates.items():
+                keys = key_path.split(".")
+                config = self.settings
+                for key in keys[:-1]:
+                    if key not in config or not isinstance(config[key], dict):
+                        config[key] = {}
+                    config = config[key]
+                leaf = keys[-1]
+                if config.get(leaf) != value:
+                    config[leaf] = value
+                    changed = True
+            if not changed:
+                self.logger.debug("Config unchanged, skip batch save")
+                return
+
+            self._save_settings()
+            self.config_updated.emit()
+            self.logger.debug("Batch config updated")
+        except Exception as e:
+            self.logger.error(f"Failed to batch set config values: {e}")
     
     def get_apps(self) -> list:
         """Get list of applications"""

@@ -367,6 +367,24 @@ class TogglePlugin(PluginBase):
         assert config["key2"] == "updated"
         assert not (Path(setup_test_env) / "config" / "plugins.json").exists()
 
+    def test_plugin_secret_config_roundtrip(self, setup_test_env):
+        config_manager = ConfigManager()
+        plugin_system = PluginSystem(config_manager)
+        secret_fields = {"secret_key"}
+
+        plugin_system.set_plugin_config(
+            "secret_plugin",
+            {"secret_id": "id-1", "secret_key": "plain-secret"},
+            secret_fields=secret_fields,
+        )
+        config_file = Path(setup_test_env) / "config" / "plugins" / "secret_plugin.json"
+        raw = json.loads(config_file.read_text(encoding="utf-8"))
+        if os.name == "nt":
+            assert raw["secret_key"] != "plain-secret"
+
+        loaded = plugin_system.get_plugin_config("secret_plugin", secret_fields=secret_fields)
+        assert loaded["secret_key"] == "plain-secret"
+
     def test_plugin_isolation_on_error(self, setup_test_env):
         """Plugin errors should not crash the system"""
         plugin_code = '''
@@ -478,35 +496,16 @@ class DiscoverTestPlugin(PluginBase):
         assert discovered["discover_test"]["name"] == "Discover Test"
         assert discovered["discover_test"]["author"] == "Tester"
 
-    def test_migrate_old_config(self, setup_test_env):
-        """Test migration from old plugins.json format"""
+    def test_ignores_legacy_plugins_json(self, setup_test_env):
         config_dir = Path(setup_test_env) / "config"
         config_dir.mkdir(exist_ok=True)
-
-        # Create old-style plugins.json
-        old_data = {
-            "plugins": {
-                "my_old_plugin": {
-                    "api_key": "old_key_value",
-                    "region": "ap-guangzhou"
-                }
-            }
-        }
-        with open(config_dir / "plugins.json", 'w') as f:
-            json.dump(old_data, f)
+        with open(config_dir / "plugins.json", "w", encoding="utf-8") as f:
+            json.dump({"plugins": {"my_old_plugin": {"api_key": "old_key_value"}}}, f)
 
         config_manager = ConfigManager()
         plugin_system = PluginSystem(config_manager)
 
-        # Check migrated config
-        migrated_config = plugin_system.get_plugin_config("my_old_plugin")
-        assert migrated_config["api_key"] == "old_key_value"
-        assert migrated_config["region"] == "ap-guangzhou"
-
-        # Check old data was cleared
-        with open(config_dir / "plugins.json", 'r') as f:
-            old_data_after = json.load(f)
-        assert old_data_after["plugins"] == {}
+        assert plugin_system.get_plugin_config("my_old_plugin") == {}
 
     def test_shutdown_unloads_all(self, setup_test_env):
         plugin_code = '''

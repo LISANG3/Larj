@@ -6,6 +6,7 @@ Search Engine - cold-search pipeline based on Everything SDK.
 
 import ctypes
 import csv
+import heapq
 import logging
 import struct
 import subprocess
@@ -501,7 +502,7 @@ foreach ($id in $targets) {{
 
         keyword_lc = keyword.lower()
         tokens = [t for t in keyword_lc.replace("\\", " ").replace("/", " ").split() if t]
-        top: List[Tuple[int, int, str, str]] = []
+        top_heap: List[Tuple[Tuple[int, int, str], str]] = []
         seen = set()
 
         for full_path, name, path in candidates:
@@ -510,22 +511,17 @@ foreach ($id in $targets) {{
                 continue
             seen.add(key)
             score = cls._score_result(keyword_lc, tokens, name, path)
-            item = (score, len(name), key, full_path)
-
-            if len(top) < limit:
-                top.append(item)
+            rank = (score, -len(name), key)
+            item = (rank, full_path)
+            if len(top_heap) < limit:
+                heapq.heappush(top_heap, item)
                 continue
 
-            worst_index = 0
-            for idx in range(1, len(top)):
-                if cls._is_worse_rank(top[idx], top[worst_index]):
-                    worst_index = idx
+            if item[0] > top_heap[0][0]:
+                heapq.heapreplace(top_heap, item)
 
-            if cls._is_better_rank(item, top[worst_index]):
-                top[worst_index] = item
-
-        ranked = sorted(top, key=lambda item: (-item[0], item[1], item[2]))
-        return [item[3] for item in ranked]
+        ranked = sorted(top_heap, key=lambda item: (-item[0][0], -item[0][1], item[0][2]))
+        return [item[1] for item in ranked]
 
     @classmethod
     def _optimize_results_to_ui(
